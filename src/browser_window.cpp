@@ -2,6 +2,7 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
+#include <set>
 
 // -------------------------------------------------------------------
 // UTF-8 / Wide helpers
@@ -712,6 +713,31 @@ void BrowserWindow::OpenExtensionsFolder() {
   ShellExecuteW(nullptr, L"open", L"explorer.exe", path.c_str(), nullptr, SW_SHOW);
 }
 
+bool BrowserWindow::IsExtensionEnabled(const std::wstring& name) {
+  std::wstring disabledPath = GetExtensionsPath() + L"\\" + name + L".disabled";
+  HANDLE h = CreateFileW(disabledPath.c_str(), GENERIC_READ, FILE_SHARE_READ,
+                         nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (h != INVALID_HANDLE_VALUE) {
+    CloseHandle(h);
+    return false;
+  }
+  return true;
+}
+
+void BrowserWindow::ToggleExtension(const std::wstring& name) {
+  std::wstring disabledPath = GetExtensionsPath() + L"\\" + name + L".disabled";
+  if (IsExtensionEnabled(name)) {
+    // Disable: create marker
+    HANDLE h = CreateFileW(disabledPath.c_str(), GENERIC_WRITE, 0, nullptr,
+                           CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h != INVALID_HANDLE_VALUE) CloseHandle(h);
+  } else {
+    // Enable: delete marker
+    DeleteFileW(disabledPath.c_str());
+  }
+  LoadExtensions();
+}
+
 void BrowserWindow::LoadExtensions() {
   if (!webview_) return;
   std::wstring extPath = GetExtensionsPath();
@@ -721,15 +747,36 @@ void BrowserWindow::LoadExtensions() {
   HANDLE hFind = FindFirstFileW(searchPath.c_str(), &fd);
   if (hFind == INVALID_HANDLE_VALUE) return;
 
+  std::set<std::wstring> disabled;
+  // First pass: collect disabled base names
+  do {
+    if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+    std::wstring name = fd.cFileName;
+    size_t dot = name.rfind(L'.');
+    if (dot == std::wstring::npos) continue;
+    if (name.substr(dot) == L".disabled") {
+      disabled.insert(name.substr(0, dot));
+    }
+  } while (FindNextFileW(hFind, &fd));
+  FindClose(hFind);
+
   std::string combinedCss;
   std::vector<std::wstring> jsFiles;
+
+  // Second pass: load enabled files
+  hFind = FindFirstFileW(searchPath.c_str(), &fd);
+  if (hFind == INVALID_HANDLE_VALUE) return;
 
   do {
     if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
     std::wstring name = fd.cFileName;
-    size_t dot = name.rfind('.');
+    size_t dot = name.rfind(L'.');
     if (dot == std::wstring::npos) continue;
+    std::wstring base = name.substr(0, dot);
     std::wstring ext = name.substr(dot);
+    if (ext == L".disabled") continue;
+    if (disabled.count(base)) continue;
+
     if (ext == L".js") {
       jsFiles.push_back(extPath + L"\\" + name);
     } else if (ext == L".css") {

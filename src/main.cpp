@@ -84,13 +84,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
           if (gBrowser) gBrowser->Navigate(L"https://discord.com");
           break;
         case kIdAdblockButton:
-          if (gBrowser) gBrowser->Navigate(L"https://chromewebstore.google.com/detail/adblock-blokkeer-reclame/gighmmpiobklfepjocnamgkkbiglidom");
+          if (gBrowser) gBrowser->ToggleExtension(L"adblock");
           break;
         case kIdVolumeButton:
-          if (gBrowser) gBrowser->Navigate(L"https://chromewebstore.google.com/detail/volume-master/jghecgabfgfdldnmbfkhmffcabddioke");
+          if (gBrowser) gBrowser->ToggleExtension(L"volume");
           break;
         case kIdDiscTokenButton:
-          if (gBrowser) gBrowser->Navigate(L"https://chromewebstore.google.com/detail/discord-token-login/kfjglmgfjedhhcddpfgfogkahmenikan");
+          if (gBrowser) gBrowser->ToggleExtension(L"dectoken");
           break;
         case kIdImportCookies:
           if (gBrowser) gBrowser->ImportCookies();
@@ -103,6 +103,16 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
           break;
         case kIdExtensionsButton: {
           HMENU menu = CreatePopupMenu();
+          auto addExt = [&](int id, const wchar_t* name) {
+            bool on = gBrowser && gBrowser->IsExtensionEnabled(name);
+            wchar_t buf[64];
+            swprintf_s(buf, L"%s (%s)", name, on ? L"AAN" : L"UIT");
+            AppendMenuW(menu, MF_STRING, id, buf);
+          };
+          addExt(kIdAdblockButton, L"AdBlock");
+          addExt(kIdVolumeButton, L"Volume");
+          addExt(kIdDiscTokenButton, L"DiscToken");
+          AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
           AppendMenuW(menu, MF_STRING, kIdExtReload,  L"Reload Scripts");
           AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
           AppendMenuW(menu, MF_STRING, 9999, L"Open Extensions Folder\u2026");
@@ -112,7 +122,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
           UINT cmd = TrackPopupMenu(menu, TPM_LEFTALIGN | TPM_RIGHTBUTTON | TPM_RETURNCMD,
                                     pt.x, pt.y, 0, hwnd, nullptr);
           DestroyMenu(menu);
-          if (cmd == kIdExtReload && gBrowser) gBrowser->LoadExtensions();
+          if (cmd == kIdAdblockButton && gBrowser) gBrowser->ToggleExtension(L"adblock");
+          else if (cmd == kIdVolumeButton && gBrowser) gBrowser->ToggleExtension(L"volume");
+          else if (cmd == kIdDiscTokenButton && gBrowser) gBrowser->ToggleExtension(L"dectoken");
+          else if (cmd == kIdExtReload && gBrowser) gBrowser->LoadExtensions();
           else if (cmd == 9999 && gBrowser) gBrowser->OpenExtensionsFolder();
           break;
         }

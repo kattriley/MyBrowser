@@ -28,6 +28,8 @@ public:
 
   void OpenExtensionsFolder();
   void LoadExtensions();
+  void ToggleExtension(const std::wstring& name);
+  bool IsExtensionEnabled(const std::wstring& name);
 
   ICoreWebView2* WebView() const { return webview_; }
 
