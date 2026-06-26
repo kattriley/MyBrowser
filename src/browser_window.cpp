@@ -100,6 +100,17 @@ static std::wstring GetPasswordPath() {
 }
 
 // -------------------------------------------------------------------
+// Extensions path
+// -------------------------------------------------------------------
+static std::wstring GetExtensionsPath() {
+  wchar_t buf[MAX_PATH];
+  GetEnvironmentVariableW(L"APPDATA", buf, MAX_PATH);
+  wcscat_s(buf, L"\\Nara\\extensions");
+  CreateDirectoryW(buf, nullptr);
+  return buf;
+}
+
+// -------------------------------------------------------------------
 // GetCookies callback for export
 // -------------------------------------------------------------------
 struct ExportHandler : ICoreWebView2GetCookiesCompletedHandler {
@@ -184,6 +195,18 @@ struct CtrlHandler : ICoreWebView2CreateCoreWebView2ControllerCompletedHandler {
   STDMETHOD(Invoke)(HRESULT hr, ICoreWebView2Controller* controller) override;
 };
 
+struct ExtHandler : ICoreWebView2NavigationCompletedEventHandler {
+  BrowserWindow* bw;
+  ExtHandler(BrowserWindow* b) : bw(b) {}
+  STDMETHOD(QueryInterface)(REFIID riid, void** ppv) override { *ppv = nullptr; return E_NOINTERFACE; }
+  STDMETHOD_(ULONG, AddRef)() override { return 2; }
+  STDMETHOD_(ULONG, Release)() override { return 1; }
+  STDMETHOD(Invoke)(ICoreWebView2*, ICoreWebView2NavigationCompletedEventArgs*) override {
+    bw->LoadExtensions();
+    return S_OK;
+  }
+};
+
 HRESULT EnvHandler::Invoke(HRESULT hr, ICoreWebView2Environment* env) {
   if (FAILED(hr) || !env) {
     MessageBoxA(nullptr,
@@ -206,6 +229,9 @@ HRESULT CtrlHandler::Invoke(HRESULT hr, ICoreWebView2Controller* controller) {
   bw->controller_ = controller;
   bw->controller_->AddRef();
   controller->get_CoreWebView2(&bw->webview_);
+
+  EventRegistrationToken extToken;
+  bw->webview_->add_NavigationCompleted(new ExtHandler(bw), &extToken);
 
   bw->Navigate(L"https://www.google.com");
   bw->Resize();
@@ -675,6 +701,97 @@ void BrowserWindow::ClearPasswords() {
     MessageBoxA(nullptr, "Alle wachtwoorden gewist.", "Wachtwoorden", MB_OK);
   } else {
     MessageBoxA(nullptr, "Geen wachtwoorden om te wissen.", "Wachtwoorden", MB_OK);
+  }
+}
+
+// -------------------------------------------------------------------
+// Extensions
+// -------------------------------------------------------------------
+void BrowserWindow::OpenExtensionsFolder() {
+  std::wstring path = GetExtensionsPath();
+  ShellExecuteW(nullptr, L"open", L"explorer.exe", path.c_str(), nullptr, SW_SHOW);
+}
+
+void BrowserWindow::LoadExtensions() {
+  if (!webview_) return;
+  std::wstring extPath = GetExtensionsPath();
+  std::wstring searchPath = extPath + L"\\*";
+
+  WIN32_FIND_DATAW fd;
+  HANDLE hFind = FindFirstFileW(searchPath.c_str(), &fd);
+  if (hFind == INVALID_HANDLE_VALUE) return;
+
+  std::string combinedCss;
+  std::vector<std::wstring> jsFiles;
+
+  do {
+    if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+    std::wstring name = fd.cFileName;
+    size_t dot = name.rfind('.');
+    if (dot == std::wstring::npos) continue;
+    std::wstring ext = name.substr(dot);
+    if (ext == L".js") {
+      jsFiles.push_back(extPath + L"\\" + name);
+    } else if (ext == L".css") {
+      HANDLE hCss = CreateFileW((extPath + L"\\" + name).c_str(),
+                                GENERIC_READ, FILE_SHARE_READ, nullptr,
+                                OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+      if (hCss != INVALID_HANDLE_VALUE) {
+        DWORD sz = GetFileSize(hCss, nullptr);
+        if (sz > 0) {
+          std::string css(static_cast<size_t>(sz), '\0');
+          DWORD rd = 0;
+          ReadFile(hCss, &css[0], sz, &rd, nullptr);
+          combinedCss += css + '\n';
+        }
+        CloseHandle(hCss);
+      }
+    }
+  } while (FindNextFileW(hFind, &fd));
+  FindClose(hFind);
+
+  // Inject combined CSS
+  if (!combinedCss.empty()) {
+    std::wstring wcss = UTF8ToWide(combinedCss);
+    auto escape = [](std::wstring& s) {
+      size_t p = 0;
+      while ((p = s.find(L'\\', p)) != std::wstring::npos) {
+        s.insert(p, 1, L'\\');
+        p += 2;
+      }
+      p = 0;
+      while ((p = s.find(L'\'', p)) != std::wstring::npos) {
+        s.insert(p, 1, L'\\');
+        p += 2;
+      }
+    };
+    escape(wcss);
+
+    std::wstring cssScript =
+      L"(function(){"
+      L"var s=document.getElementById('__nara_ext');"
+      L"if(s)s.remove();"
+      L"s=document.createElement('style');"
+      L"s.id='__nara_ext';"
+      L"s.textContent='" + wcss + L"';"
+      L"document.head.appendChild(s);"
+      L"})()";
+    webview_->ExecuteScript(cssScript.c_str(), nullptr);
+  }
+
+  // Inject JS files
+  for (auto& jsPath : jsFiles) {
+    HANDLE hJs = CreateFileW(jsPath.c_str(), GENERIC_READ, FILE_SHARE_READ,
+                             nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (hJs == INVALID_HANDLE_VALUE) continue;
+    DWORD sz = GetFileSize(hJs, nullptr);
+    if (sz > 0) {
+      std::string js(static_cast<size_t>(sz), '\0');
+      DWORD rd = 0;
+      ReadFile(hJs, &js[0], sz, &rd, nullptr);
+      webview_->ExecuteScript(UTF8ToWide(js).c_str(), nullptr);
+    }
+    CloseHandle(hJs);
   }
 }
 

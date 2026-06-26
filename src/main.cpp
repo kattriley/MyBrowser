@@ -23,6 +23,7 @@ static void CreateToolbar(HWND parent) {
   btn(kIdExportCookies,   L"Export");
   x += 8;
   btn(kIdPasswordsButton, L"Passwords");
+  btn(kIdExtensionsButton, L"Ext");
   btn(kIdSettingsButton,  L"Settings");
 }
 
@@ -87,6 +88,21 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case kIdAccelReload:
           if (gBrowser) gBrowser->Reload();
           break;
+        case kIdExtensionsButton: {
+          HMENU menu = CreatePopupMenu();
+          AppendMenuW(menu, MF_STRING, kIdExtReload,  L"Reload Scripts");
+          AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+          AppendMenuW(menu, MF_STRING, 9999, L"Open Extensions Folder\u2026");
+          POINT pt;
+          GetCursorPos(&pt);
+          SetForegroundWindow(hwnd);
+          UINT cmd = TrackPopupMenu(menu, TPM_LEFTALIGN | TPM_RIGHTBUTTON | TPM_RETURNCMD,
+                                    pt.x, pt.y, 0, hwnd, nullptr);
+          DestroyMenu(menu);
+          if (cmd == kIdExtReload && gBrowser) gBrowser->LoadExtensions();
+          else if (cmd == 9999 && gBrowser) gBrowser->OpenExtensionsFolder();
+          break;
+        }
         case kIdSettingsButton: {
           HMENU menu = CreatePopupMenu();
           AppendMenuW(menu, MF_STRING, kIdToggleTheme,

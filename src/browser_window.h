@@ -26,6 +26,9 @@ public:
   void ViewPasswords();
   void ClearPasswords();
 
+  void OpenExtensionsFolder();
+  void LoadExtensions();
+
   ICoreWebView2* WebView() const { return webview_; }
 
 private:
@@ -38,4 +41,5 @@ private:
   friend struct CtrlHandler;
   friend struct PmSaveHandler;
   friend struct PmAutofillHandler;
+  friend struct ExtHandler;
 };

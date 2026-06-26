@@ -36,7 +36,7 @@ echo == Compiling ==
     "%SRC_DIR%\main.cpp" "%SRC_DIR%\browser_window.cpp" ^
     "%BUILD_DIR%\resources.res" ^
     -L"%BUILD_DIR%" -L"%WV_LIB%" ^
-    -lwebview2loader -lole32 -loleaut32 -luuid -static-libgcc -static-libstdc++
+    "-l:WebView2Loader.dll.lib" -lgdi32 -lshell32 -lcomdlg32 -lole32 -loleaut32 -luuid -static-libgcc -static-libstdc++
 
 echo == Copying WebView2Loader.dll ==
 copy /Y "%WV_LIB%\WebView2Loader.dll" "%BUILD_DIR%\"

@@ -14,10 +14,12 @@ constexpr int kIdImportCookies    = 104;
 constexpr int kIdExportCookies    = 105;
 constexpr int kIdSettingsButton   = 106;
 constexpr int kIdPasswordsButton  = 107;
+constexpr int kIdExtensionsButton = 110;
 
 constexpr int kIdAccelReload      = 1001;
 
 constexpr int kIdToggleTheme      = 200;
+constexpr int kIdExtReload        = 206;
 constexpr int kIdPmSave           = 201;
 constexpr int kIdPmAutofill       = 202;
 constexpr int kIdPmView           = 203;
