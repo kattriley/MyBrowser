@@ -9,6 +9,7 @@ constexpr int kWindowHeight = 800;
 constexpr int kIdGoogleButton     = 101;
 constexpr int kIdPinterestButton  = 102;
 constexpr int kIdRobloxButton     = 103;
+constexpr int kIdDiscordButton    = 109;
 constexpr int kIdImportCookies    = 104;
 constexpr int kIdExportCookies    = 105;
 constexpr int kIdSettingsButton   = 106;

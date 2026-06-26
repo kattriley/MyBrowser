@@ -17,6 +17,7 @@ static void CreateToolbar(HWND parent) {
   btn(kIdGoogleButton,    L"Google");
   btn(kIdPinterestButton, L"Pinterest");
   btn(kIdRobloxButton,    L"Roblox");
+  btn(kIdDiscordButton,   L"Discord");
   x += 8;
   btn(kIdImportCookies,   L"Import");
   btn(kIdExportCookies,   L"Export");
@@ -73,6 +74,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
           break;
         case kIdRobloxButton:
           if (gBrowser) gBrowser->Navigate(L"https://www.roblox.com");
+          break;
+        case kIdDiscordButton:
+          if (gBrowser) gBrowser->Navigate(L"https://discord.com");
           break;
         case kIdImportCookies:
           if (gBrowser) gBrowser->ImportCookies();
