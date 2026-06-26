@@ -45,6 +45,20 @@ static void UpdateToolbarBrush(bool dark) {
   InvalidateRect(gMainHwnd, nullptr, TRUE);
 }
 
+static void UpdateExtButtons() {
+  if (!gBrowser) return;
+  auto setBtn = [](int id, const wchar_t* name, const wchar_t* label) {
+    HWND btn = GetDlgItem(gMainHwnd, id);
+    if (!btn) return;
+    wchar_t txt[32];
+    swprintf_s(txt, L"%s %s", label, gBrowser->IsExtensionEnabled(name) ? L"\u2713" : L"\u2717");
+    SetWindowTextW(btn, txt);
+  };
+  setBtn(kIdAdblockButton,   L"adblock",  L"AB");
+  setBtn(kIdVolumeButton,    L"volume",   L"Vol");
+  setBtn(kIdDiscTokenButton, L"dectoken", L"DTok");
+}
+
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
   switch (msg) {
     case WM_CREATE:
@@ -84,13 +98,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
           if (gBrowser) gBrowser->Navigate(L"https://discord.com");
           break;
         case kIdAdblockButton:
-          if (gBrowser) gBrowser->ToggleExtension(L"adblock");
+          if (gBrowser) { gBrowser->ToggleExtension(L"adblock"); UpdateExtButtons(); }
           break;
         case kIdVolumeButton:
-          if (gBrowser) gBrowser->ToggleExtension(L"volume");
+          if (gBrowser) { gBrowser->ToggleExtension(L"volume"); UpdateExtButtons(); }
           break;
         case kIdDiscTokenButton:
-          if (gBrowser) gBrowser->ToggleExtension(L"dectoken");
+          if (gBrowser) { gBrowser->ToggleExtension(L"dectoken"); UpdateExtButtons(); }
           break;
         case kIdImportCookies:
           if (gBrowser) gBrowser->ImportCookies();
@@ -122,9 +136,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
           UINT cmd = TrackPopupMenu(menu, TPM_LEFTALIGN | TPM_RIGHTBUTTON | TPM_RETURNCMD,
                                     pt.x, pt.y, 0, hwnd, nullptr);
           DestroyMenu(menu);
-          if (cmd == kIdAdblockButton && gBrowser) gBrowser->ToggleExtension(L"adblock");
-          else if (cmd == kIdVolumeButton && gBrowser) gBrowser->ToggleExtension(L"volume");
-          else if (cmd == kIdDiscTokenButton && gBrowser) gBrowser->ToggleExtension(L"dectoken");
+          if (cmd == kIdAdblockButton && gBrowser) { gBrowser->ToggleExtension(L"adblock"); UpdateExtButtons(); }
+          else if (cmd == kIdVolumeButton && gBrowser) { gBrowser->ToggleExtension(L"volume"); UpdateExtButtons(); }
+          else if (cmd == kIdDiscTokenButton && gBrowser) { gBrowser->ToggleExtension(L"dectoken"); UpdateExtButtons(); }
           else if (cmd == kIdExtReload && gBrowser) gBrowser->LoadExtensions();
           else if (cmd == 9999 && gBrowser) gBrowser->OpenExtensionsFolder();
           break;
@@ -233,6 +247,7 @@ int APIENTRY WinMain(HINSTANCE hInstance,
   BrowserWindow browser;
   gBrowser = &browser;
   browser.Initialize(hwnd);
+  UpdateExtButtons();
 
   MSG msg;
   while (GetMessage(&msg, nullptr, 0, 0)) {
