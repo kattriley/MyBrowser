@@ -81,7 +81,7 @@ static std::string Base64Decode(const std::string& in) {
 static std::wstring GetCookiePath() {
   wchar_t buf[MAX_PATH];
   GetEnvironmentVariableW(L"APPDATA", buf, MAX_PATH);
-  wcscat_s(buf, L"\\MyBrowser");
+  wcscat_s(buf, L"\\Nara");
   CreateDirectoryW(buf, nullptr);
   wcscat_s(buf, L"\\cookies.txt");
   return buf;
@@ -93,7 +93,7 @@ static std::wstring GetCookiePath() {
 static std::wstring GetPasswordPath() {
   wchar_t buf[MAX_PATH];
   GetEnvironmentVariableW(L"APPDATA", buf, MAX_PATH);
-  wcscat_s(buf, L"\\MyBrowser");
+  wcscat_s(buf, L"\\Nara");
   CreateDirectoryW(buf, nullptr);
   wcscat_s(buf, L"\\passwords.txt");
   return buf;

@@ -1,4 +1,4 @@
-# MyBrowser
+# nara
 
 Een minimalistische web browser gebouwd op Microsoft Edge WebView2, geschreven in C++ met de Win32 API.
 
@@ -6,7 +6,7 @@ Een minimalistische web browser gebouwd op Microsoft Edge WebView2, geschreven i
 
 - **WebView2 engine** — dezelfde rendering engine als Microsoft Edge
 - **Snelkoppelingen** — Google, Pinterest, Roblox
-- **Cookie manager** — exporteer/importeer cookies naar `%APPDATA%\MyBrowser\cookies.txt`
+- **Cookie manager** — exporteer/importeer cookies naar `%APPDATA%\Nara\cookies.txt`
 - **Dark/Light mode** — toggle via Settings knop
 - **Wachtwoordenmanager** — sla inloggegevens op en vul ze automatisch in
 - **Ctrl+R** — herlaad de huidige pagina

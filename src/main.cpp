@@ -140,7 +140,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 }
 
 HWND CreateMainWindow(HINSTANCE hInstance) {
-  const wchar_t kClassName[] = L"MyBrowserWindow";
+  const wchar_t kClassName[] = L"NaraWindow";
 
   WNDCLASSEXW wc = {};
   wc.cbSize = sizeof(wc);
@@ -159,7 +159,7 @@ HWND CreateMainWindow(HINSTANCE hInstance) {
   AdjustWindowRect(&rc, style, FALSE);
 
   HWND hwnd = CreateWindowExW(
-      0, kClassName, L"MyBrowser",
+      0, kClassName, L"Nara",
       style, CW_USEDEFAULT, CW_USEDEFAULT,
       rc.right - rc.left, rc.bottom - rc.top,
       nullptr, nullptr, hInstance, nullptr);
