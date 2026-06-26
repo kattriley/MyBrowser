@@ -1,0 +1,13 @@
+build/
+*.exe
+*.dll
+*.res
+*.lib
+*.a
+*.o
+*.obj
+*.pdb
+*.ilk
+*.exp
+.DS_Store
+Thumbs.db
