@@ -1,4 +1,5 @@
 #include "browser_window.h"
+#include "main.h"
 #include <fstream>
 #include <sstream>
 #include <vector>
@@ -76,7 +77,7 @@ static std::string Base64Decode(const std::string& in) {
 }
 
 // -------------------------------------------------------------------
-// Cookie path
+// Path helpers
 // -------------------------------------------------------------------
 static std::wstring GetCookiePath() {
   wchar_t buf[MAX_PATH];
@@ -87,9 +88,6 @@ static std::wstring GetCookiePath() {
   return buf;
 }
 
-// -------------------------------------------------------------------
-// Password path
-// -------------------------------------------------------------------
 static std::wstring GetPasswordPath() {
   wchar_t buf[MAX_PATH];
   GetEnvironmentVariableW(L"APPDATA", buf, MAX_PATH);
@@ -163,103 +161,369 @@ struct ExportHandler : ICoreWebView2GetCookiesCompletedHandler {
 };
 
 // -------------------------------------------------------------------
-// BrowserWindow
+// Environment created → create first tab
 // -------------------------------------------------------------------
 struct EnvHandler : ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler {
   BrowserWindow* bw;
-  HWND parent;
-  EnvHandler(BrowserWindow* b, HWND p) : bw(b), parent(p) {}
+  EnvHandler(BrowserWindow* b) : bw(b) {}
   STDMETHOD(QueryInterface)(REFIID riid, void** ppv) override { *ppv = nullptr; return E_NOINTERFACE; }
   STDMETHOD_(ULONG, AddRef)() override { return 2; }
   STDMETHOD_(ULONG, Release)() override { return 1; }
   STDMETHOD(Invoke)(HRESULT hr, ICoreWebView2Environment* env) override;
 };
 
-struct CtrlHandler : ICoreWebView2CreateCoreWebView2ControllerCompletedHandler {
+// -------------------------------------------------------------------
+// Tab controller creation completed
+// -------------------------------------------------------------------
+struct TabCtrlHandler : ICoreWebView2CreateCoreWebView2ControllerCompletedHandler {
   BrowserWindow* bw;
-  CtrlHandler(BrowserWindow* b) : bw(b) {}
+  int tabIndex;
+  TabCtrlHandler(BrowserWindow* b, int idx) : bw(b), tabIndex(idx) {}
   STDMETHOD(QueryInterface)(REFIID riid, void** ppv) override { *ppv = nullptr; return E_NOINTERFACE; }
   STDMETHOD_(ULONG, AddRef)() override { return 2; }
   STDMETHOD_(ULONG, Release)() override { return 1; }
   STDMETHOD(Invoke)(HRESULT hr, ICoreWebView2Controller* controller) override;
 };
 
+// -------------------------------------------------------------------
+// Navigation completed → update address bar + title
+// -------------------------------------------------------------------
+struct NavCompletedHandler : ICoreWebView2NavigationCompletedEventHandler {
+  BrowserWindow* bw;
+  int tabIndex;
+  NavCompletedHandler(BrowserWindow* b, int idx) : bw(b), tabIndex(idx) {}
+  STDMETHOD(QueryInterface)(REFIID riid, void** ppv) override { *ppv = nullptr; return E_NOINTERFACE; }
+  STDMETHOD_(ULONG, AddRef)() override { return 2; }
+  STDMETHOD_(ULONG, Release)() override { return 1; }
+  STDMETHOD(Invoke)(ICoreWebView2*, ICoreWebView2NavigationCompletedEventArgs*) override {
+    if (tabIndex < 0 || tabIndex >= (int)bw->tabs_.size()) return S_OK;
+    auto& tab = bw->tabs_[tabIndex];
+    if (!tab.webview) return S_OK;
+
+    LPWSTR src = nullptr;
+    tab.webview->get_Source(&src);
+    if (src) {
+      tab.url = src;
+      CoTaskMemFree(src);
+    }
+
+    LPWSTR title = nullptr;
+    ICoreWebView2_5* wv5 = nullptr;
+    if (SUCCEEDED(tab.webview->QueryInterface(IID_ICoreWebView2_5, (void**)&wv5)) && wv5) {
+      wv5->get_DocumentTitle(&title);
+      wv5->Release();
+    }
+    if (title) {
+      tab.title = title;
+      CoTaskMemFree(title);
+    }
+
+    tab.isLoading = false;
+
+    if (tabIndex == bw->activeTab_) {
+      if (bw->addrEdit_) {
+        SetWindowTextW(bw->addrEdit_, tab.url.c_str());
+      }
+      SetWindowTextW(bw->GetParent(), tab.title.empty() ? L"Nara" : tab.title.c_str());
+      // Trigger tab bar update
+      PostMessageW(bw->GetParent(), WM_SIZE, 0, 0);
+    }
+    return S_OK;
+  }
+};
+
+// -------------------------------------------------------------------
+// Source changed → update URL while typing
+// -------------------------------------------------------------------
+struct SrcChangedHandler : ICoreWebView2SourceChangedEventHandler {
+  BrowserWindow* bw;
+  int tabIndex;
+  SrcChangedHandler(BrowserWindow* b, int idx) : bw(b), tabIndex(idx) {}
+  STDMETHOD(QueryInterface)(REFIID riid, void** ppv) override { *ppv = nullptr; return E_NOINTERFACE; }
+  STDMETHOD_(ULONG, AddRef)() override { return 2; }
+  STDMETHOD_(ULONG, Release)() override { return 1; }
+  STDMETHOD(Invoke)(ICoreWebView2*, ICoreWebView2SourceChangedEventArgs*) override {
+    if (tabIndex < 0 || tabIndex >= (int)bw->tabs_.size()) return S_OK;
+    auto& tab = bw->tabs_[tabIndex];
+    if (!tab.webview) return S_OK;
+    LPWSTR src = nullptr;
+    tab.webview->get_Source(&src);
+    if (src) {
+      tab.url = src;
+      CoTaskMemFree(src);
+    }
+    if (tabIndex == bw->activeTab_ && bw->addrEdit_) {
+      SetWindowTextW(bw->addrEdit_, tab.url.c_str());
+    }
+    return S_OK;
+  }
+};
+
+// -------------------------------------------------------------------
+// EnvHandler::Invoke
+// -------------------------------------------------------------------
 HRESULT EnvHandler::Invoke(HRESULT hr, ICoreWebView2Environment* env) {
   if (FAILED(hr) || !env) {
-    MessageBoxA(nullptr,
-      "WebView2 runtime niet gevonden.\n"
-      "Installeer van: https://go.microsoft.com/fwlink/p/?LinkId=2124703",
-      "Fout", MB_OK);
+    PostMessageW(bw->parent_, kMsgCreateTab, 0, 1); // 1 = error
     return hr;
   }
   bw->env_ = env;
   bw->env_->AddRef();
-  env->CreateCoreWebView2Controller(parent, new CtrlHandler(bw));
+  PostMessageW(bw->parent_, kMsgCreateTab, 0, 0); // 0 = ok
   return S_OK;
 }
 
-HRESULT CtrlHandler::Invoke(HRESULT hr, ICoreWebView2Controller* controller) {
+// -------------------------------------------------------------------
+// TabCtrlHandler::Invoke
+// -------------------------------------------------------------------
+HRESULT TabCtrlHandler::Invoke(HRESULT hr, ICoreWebView2Controller* controller) {
   if (FAILED(hr) || !controller) {
-    MessageBoxA(nullptr, "Kon WebView2 controller niet maken.", "Fout", MB_OK);
+    if (tabIndex < (int)bw->tabs_.size())
+      bw->tabs_.erase(bw->tabs_.begin() + tabIndex);
+    if (tabIndex <= bw->activeTab_ && bw->activeTab_ > 0)
+      bw->activeTab_--;
     return hr;
   }
-  bw->controller_ = controller;
-  bw->controller_->AddRef();
-  controller->get_CoreWebView2(&bw->webview_);
 
-  bw->Navigate(L"https://www.google.com");
+  if (tabIndex >= (int)bw->tabs_.size()) return E_FAIL;
+  TabInfo& tab = bw->tabs_[tabIndex];
+  tab.controller = controller;
+  tab.controller->AddRef();
+  controller->get_CoreWebView2(&tab.webview);
+
+  // Only show if active
+  controller->put_IsVisible(tabIndex == bw->activeTab_ ? TRUE : FALSE);
+
+  // Settings
+  ICoreWebView2Settings* settings = nullptr;
+  if (SUCCEEDED(tab.webview->get_Settings(&settings)) && settings) {
+    settings->put_IsScriptEnabled(TRUE);
+    settings->put_AreDefaultScriptDialogsEnabled(TRUE);
+    settings->put_IsWebMessageEnabled(TRUE);
+    settings->Release();
+  }
+
+  EventRegistrationToken navToken, srcToken;
+  tab.webview->add_NavigationCompleted(new NavCompletedHandler(bw, tabIndex), &navToken);
+  tab.webview->add_SourceChanged(new SrcChangedHandler(bw, tabIndex), &srcToken);
+
+  // Apply theme
+  if (bw->isDark_) {
+    ICoreWebView2Controller2* ctrl2 = nullptr;
+    if (SUCCEEDED(controller->QueryInterface(IID_ICoreWebView2Controller2, (void**)&ctrl2)) && ctrl2) {
+      COREWEBVIEW2_COLOR bg = {30, 30, 30, 255};
+      ctrl2->put_DefaultBackgroundColor(bg);
+      ctrl2->Release();
+    }
+    ICoreWebView2_13* wv13 = nullptr;
+    if (SUCCEEDED(tab.webview->QueryInterface(IID_ICoreWebView2_13, (void**)&wv13)) && wv13) {
+      ICoreWebView2Profile* profile = nullptr;
+      if (SUCCEEDED(wv13->get_Profile(&profile)) && profile) {
+        profile->put_PreferredColorScheme(COREWEBVIEW2_PREFERRED_COLOR_SCHEME_DARK);
+        profile->Release();
+      }
+      wv13->Release();
+    }
+  }
+
+  bw->NavigateTab(tabIndex, tab.url.empty() ? L"https://www.google.com" : tab.url);
   bw->Resize();
   return S_OK;
 }
 
-BrowserWindow::BrowserWindow()
-  : env_(nullptr), controller_(nullptr), webview_(nullptr) {}
+// ===================================================================
+// BrowserWindow
+// ===================================================================
+
+BrowserWindow::BrowserWindow() : env_(nullptr) {}
 
 BrowserWindow::~BrowserWindow() {
-  if (controller_) controller_->Release();
-  if (webview_) webview_->Release();
+  for (auto& t : tabs_) {
+    if (t.controller) t.controller->Release();
+  }
   if (env_) env_->Release();
 }
 
 bool BrowserWindow::Initialize(HWND parent) {
-  EnvHandler* handler = new EnvHandler(this, parent);
+  parent_ = parent;
+  EnvHandler* handler = new EnvHandler(this);
   HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(nullptr, nullptr, nullptr, handler);
   return SUCCEEDED(hr);
 }
 
+ICoreWebView2* BrowserWindow::WebView() const {
+  if (activeTab_ < 0 || activeTab_ >= (int)tabs_.size()) return nullptr;
+  return tabs_[activeTab_].webview;
+}
+
+TabInfo& BrowserWindow::ActiveTabRef() {
+  static TabInfo empty = {};
+  if (activeTab_ < 0 || activeTab_ >= (int)tabs_.size()) return empty;
+  return tabs_[activeTab_];
+}
+
+// -------------------------------------------------------------------
+// Tab management
+// -------------------------------------------------------------------
+void BrowserWindow::NewTab(const std::wstring& url) {
+  TabInfo tab;
+  tab.url = url;
+  tab.title = L"Nieuwe tab";
+  tab.isLoading = true;
+  tabs_.push_back(tab);
+
+  int idx = (int)tabs_.size() - 1;
+  SwitchTab(idx);
+
+  // Create controller directly on the main parent window
+  env_->CreateCoreWebView2Controller(parent_, new TabCtrlHandler(this, idx));
+
+  PostMessageW(parent_, WM_SIZE, 0, 0);
+}
+
+void BrowserWindow::CloseTab(int idx) {
+  if (tabs_.size() <= 1) return;
+  if (idx < 0 || idx >= (int)tabs_.size()) return;
+
+  if (tabs_[idx].controller) tabs_[idx].controller->Release();
+
+  HRESULT (__stdcall* closeFn)(void) = nullptr;
+  if (tabs_[idx].controller) {
+    tabs_[idx].controller->Close();
+  }
+
+  tabs_.erase(tabs_.begin() + idx);
+  if (activeTab_ >= (int)tabs_.size()) activeTab_ = (int)tabs_.size() - 1;
+  if (activeTab_ > idx) activeTab_--;
+  SwitchTab(activeTab_);
+}
+
+void BrowserWindow::SwitchTab(int idx) {
+  if (idx < 0 || idx >= (int)tabs_.size()) return;
+
+  if (activeTab_ >= 0 && activeTab_ < (int)tabs_.size()) {
+    TabInfo& old = tabs_[activeTab_];
+    if (old.controller) old.controller->put_IsVisible(FALSE);
+  }
+
+  activeTab_ = idx;
+  TabInfo& tab = tabs_[idx];
+  if (tab.controller) {
+    tab.controller->put_IsVisible(TRUE);
+    tab.controller->put_Bounds(CalcWebViewRect());
+
+    // Update address bar
+    if (addrEdit_) {
+      SetWindowTextW(addrEdit_, tab.url.c_str());
+    }
+    SetWindowTextW(parent_, tab.title.empty() ? L"Nara" : tab.title.c_str());
+  }
+
+  PostMessageW(parent_, WM_SIZE, 0, 0);
+}
+
+RECT BrowserWindow::CalcWebViewRect() {
+  RECT rc;
+  GetClientRect(parent_, &rc);
+  int topY = kTabBarHeight + kToolbarHeight + kSiteRowHeight;
+  rc.top += topY;
+  return rc;
+}
+
+// -------------------------------------------------------------------
+// Navigation
+// -------------------------------------------------------------------
 void BrowserWindow::Navigate(const std::wstring& url) {
-  if (webview_) webview_->Navigate(url.c_str());
+  if (activeTab_ < 0 || activeTab_ >= (int)tabs_.size()) return;
+  TabInfo& tab = tabs_[activeTab_];
+  tab.url = url;
+  if (tab.webview) {
+    tab.webview->Navigate(url.c_str());
+  }
 }
 
 void BrowserWindow::Navigate(const std::string& url) {
-  if (!webview_) return;
+  if (activeTab_ < 0 || activeTab_ >= (int)tabs_.size()) return;
+  TabInfo& tab = tabs_[activeTab_];
   int len = MultiByteToWideChar(CP_UTF8, 0, url.c_str(), -1, nullptr, 0);
   std::wstring wurl(static_cast<size_t>(len) - 1, L'\0');
   MultiByteToWideChar(CP_UTF8, 0, url.c_str(), -1, &wurl[0], len);
-  webview_->Navigate(wurl.c_str());
+  tab.url = wurl;
+  if (tab.webview) {
+    tab.webview->Navigate(wurl.c_str());
+  }
 }
 
-void BrowserWindow::GoBack()    { if (webview_) webview_->GoBack(); }
-void BrowserWindow::GoForward() { if (webview_) webview_->GoForward(); }
-void BrowserWindow::Reload()    { if (webview_) webview_->Reload(); }
+void BrowserWindow::NavigateTab(int idx, const std::wstring& url) {
+  if (idx < 0 || idx >= (int)tabs_.size()) return;
+  TabInfo& tab = tabs_[idx];
+  tab.url = url;
+  if (tab.webview) {
+    tab.webview->Navigate(url.c_str());
+  }
+}
 
+void BrowserWindow::GoBack() {
+  if (activeTab_ < 0 || activeTab_ >= (int)tabs_.size()) return;
+  TabInfo& tab = tabs_[activeTab_];
+  if (tab.webview) tab.webview->GoBack();
+}
+
+void BrowserWindow::GoForward() {
+  if (activeTab_ < 0 || activeTab_ >= (int)tabs_.size()) return;
+  TabInfo& tab = tabs_[activeTab_];
+  if (tab.webview) tab.webview->GoForward();
+}
+
+void BrowserWindow::Reload() {
+  if (activeTab_ < 0 || activeTab_ >= (int)tabs_.size()) return;
+  TabInfo& tab = tabs_[activeTab_];
+  if (tab.webview) tab.webview->Reload();
+}
+
+// -------------------------------------------------------------------
+// Search in page
+// -------------------------------------------------------------------
+void BrowserWindow::SearchInPage() {
+  if (!WebView()) return;
+  wchar_t text[256] = {};
+  if (DialogBoxParamW((HINSTANCE)GetWindowLongPtrW(parent_, GWLP_HINSTANCE),
+      L"FIND_IN_PAGE", parent_, nullptr, 0)) {
+    // Actually let's do a simple input dialog via JavaScript prompt
+  }
+  // Simpler: use a Windows input dialog
+  wchar_t searchText[256] = {};
+  // Use the existing edit control or prompt
+  // For simplicity, use the address bar as search term input
+  // Actually, let's do it properly with Prompt
+  const wchar_t* script =
+    L"(function(){"
+    L"  var t = prompt('Zoek op pagina:');"
+    L"  if (t && t.length > 0) {"
+    L"    window.find(t, false, false, true);"
+    L"  }"
+    L"})()";
+  WebView()->ExecuteScript(script, nullptr);
+}
+
+// -------------------------------------------------------------------
+// Resize
+// -------------------------------------------------------------------
 void BrowserWindow::Resize() {
-  if (!controller_) return;
-  HWND parent = nullptr;
-  controller_->get_ParentWindow(&parent);
-  RECT rc;
-  GetClientRect(parent, &rc);
-  rc.top += 38;
-  controller_->put_Bounds(rc);
+  if (activeTab_ < 0 || activeTab_ >= (int)tabs_.size()) return;
+  TabInfo& tab = tabs_[activeTab_];
+  if (!tab.controller) return;
+  RECT rc = CalcWebViewRect();
+  tab.controller->put_Bounds(rc);
 }
 
 // -------------------------------------------------------------------
 // Cookie export
 // -------------------------------------------------------------------
 void BrowserWindow::ExportCookies() {
-  if (!webview_) return;
+  if (!WebView()) return;
   ICoreWebView2_2* wv2 = nullptr;
-  HRESULT hr = webview_->QueryInterface(IID_ICoreWebView2_2, (void**)&wv2);
+  HRESULT hr = WebView()->QueryInterface(IID_ICoreWebView2_2, (void**)&wv2);
   if (FAILED(hr) || !wv2) {
     MessageBoxA(nullptr, "Kan CookieManager niet openen.", "Fout", MB_OK);
     return;
@@ -278,9 +542,9 @@ void BrowserWindow::ExportCookies() {
 // Cookie import
 // -------------------------------------------------------------------
 void BrowserWindow::ImportCookies() {
-  if (!webview_) return;
+  if (!WebView()) return;
   ICoreWebView2_2* wv2 = nullptr;
-  HRESULT hr = webview_->QueryInterface(IID_ICoreWebView2_2, (void**)&wv2);
+  HRESULT hr = WebView()->QueryInterface(IID_ICoreWebView2_2, (void**)&wv2);
   if (FAILED(hr) || !wv2) {
     MessageBoxA(nullptr, "Kan CookieManager niet openen.", "Fout", MB_OK);
     return;
@@ -361,54 +625,56 @@ void BrowserWindow::ImportCookies() {
 // -------------------------------------------------------------------
 void BrowserWindow::ToggleTheme() {
   isDark_ = !isDark_;
-  if (!webview_ || !controller_) return;
+  for (auto& tab : tabs_) {
+    if (!tab.controller) continue;
+    if (!tab.webview) continue;
 
-  ICoreWebView2Controller2* ctrl2 = nullptr;
-  if (SUCCEEDED(controller_->QueryInterface(IID_ICoreWebView2Controller2, (void**)&ctrl2)) && ctrl2) {
-    COREWEBVIEW2_COLOR bg;
-    if (isDark_) {
-      bg.R = 30; bg.G = 30; bg.B = 30; bg.A = 255;
-    } else {
-      bg.R = 255; bg.G = 255; bg.B = 255; bg.A = 255;
+    ICoreWebView2Controller2* ctrl2 = nullptr;
+    if (SUCCEEDED(tab.controller->QueryInterface(IID_ICoreWebView2Controller2, (void**)&ctrl2)) && ctrl2) {
+      COREWEBVIEW2_COLOR bg;
+      if (isDark_) {
+        bg.R = 30; bg.G = 30; bg.B = 30; bg.A = 255;
+      } else {
+        bg.R = 255; bg.G = 255; bg.B = 255; bg.A = 255;
+      }
+      ctrl2->put_DefaultBackgroundColor(bg);
+      ctrl2->Release();
     }
-    ctrl2->put_DefaultBackgroundColor(bg);
-    ctrl2->Release();
-  }
 
-  ICoreWebView2_13* wv13 = nullptr;
-  if (SUCCEEDED(webview_->QueryInterface(IID_ICoreWebView2_13, (void**)&wv13)) && wv13) {
-    ICoreWebView2Profile* profile = nullptr;
-    if (SUCCEEDED(wv13->get_Profile(&profile)) && profile) {
-      profile->put_PreferredColorScheme(
-          isDark_ ? COREWEBVIEW2_PREFERRED_COLOR_SCHEME_DARK
-                  : COREWEBVIEW2_PREFERRED_COLOR_SCHEME_LIGHT);
-      profile->Release();
+    ICoreWebView2_13* wv13 = nullptr;
+    if (SUCCEEDED(tab.webview->QueryInterface(IID_ICoreWebView2_13, (void**)&wv13)) && wv13) {
+      ICoreWebView2Profile* profile = nullptr;
+      if (SUCCEEDED(wv13->get_Profile(&profile)) && profile) {
+        profile->put_PreferredColorScheme(
+            isDark_ ? COREWEBVIEW2_PREFERRED_COLOR_SCHEME_DARK
+                    : COREWEBVIEW2_PREFERRED_COLOR_SCHEME_LIGHT);
+        profile->Release();
+      }
+      wv13->Release();
     }
-    wv13->Release();
-  }
 
-  const wchar_t* script = isDark_
-    ? LR"(document.documentElement.style.backgroundColor='#1e1e1e';
+    const wchar_t* script = isDark_
+      ? LR"(document.documentElement.style.backgroundColor='#1e1e1e';
 try {
   let s=document.createElement('style');
   s.id='__mydark';
   s.textContent='html{filter:invert(.88)hue-rotate(180deg)}img,video,canvas,svg{filter:invert(1)hue-rotate(180deg)}';
   document.head.appendChild(s);
 }catch(e){})"
-    : LR"(try{
+      : LR"(try{
   let s=document.getElementById('__mydark');
   if(s)s.remove();
   document.documentElement.style.backgroundColor='';
 }catch(e){})";
 
-  webview_->ExecuteScript(script, nullptr);
+    tab.webview->ExecuteScript(script, nullptr);
+  }
 }
 
 // -------------------------------------------------------------------
 // Password Manager
 // -------------------------------------------------------------------
 
-// Extract hostname from a URL
 static std::wstring ExtractDomain(const std::wstring& url) {
   size_t start = url.find(L"://");
   if (start == std::wstring::npos) start = 0;
@@ -418,7 +684,6 @@ static std::wstring ExtractDomain(const std::wstring& url) {
   return url.substr(start, end - start);
 }
 
-// Password save handler (receives JSON result of JS execution)
 struct PmSaveHandler : ICoreWebView2ExecuteScriptCompletedHandler {
   BrowserWindow* bw;
   std::wstring domain;
@@ -429,8 +694,6 @@ struct PmSaveHandler : ICoreWebView2ExecuteScriptCompletedHandler {
   STDMETHOD(Invoke)(HRESULT, LPCWSTR resultObjectAsJson) override {
     if (!resultObjectAsJson) return S_OK;
     std::string json = WideToUTF8(resultObjectAsJson);
-    // resultObjectAsJson is a JSON string: e.g. "user|||pass"
-    // Strip surrounding quotes
     if (json.size() < 2) return S_OK;
     std::string raw = json.substr(1, json.size() - 2);
     size_t sep = raw.find("|||");
@@ -498,9 +761,9 @@ struct PmSaveHandler : ICoreWebView2ExecuteScriptCompletedHandler {
 };
 
 void BrowserWindow::SavePassword() {
-  if (!webview_) return;
+  if (!WebView()) return;
   LPWSTR src = nullptr;
-  webview_->get_Source(&src);
+  WebView()->get_Source(&src);
   std::wstring domain = src ? ExtractDomain(src) : L"unknown";
   CoTaskMemFree(src);
 
@@ -520,10 +783,9 @@ void BrowserWindow::SavePassword() {
     L"return user+'|||'+pass;"
     L"})()";
 
-  webview_->ExecuteScript(script, new PmSaveHandler(this, domain));
+  WebView()->ExecuteScript(script, new PmSaveHandler(this, domain));
 }
 
-// Password autofill handler
 struct PmAutofillHandler : ICoreWebView2ExecuteScriptCompletedHandler {
   BrowserWindow* bw;
   std::wstring user;
@@ -537,9 +799,9 @@ struct PmAutofillHandler : ICoreWebView2ExecuteScriptCompletedHandler {
 };
 
 void BrowserWindow::AutoFillPassword() {
-  if (!webview_) return;
+  if (!WebView()) return;
   LPWSTR src = nullptr;
-  webview_->get_Source(&src);
+  WebView()->get_Source(&src);
   std::wstring domain = src ? ExtractDomain(src) : L"unknown";
   CoTaskMemFree(src);
 
@@ -617,7 +879,7 @@ void BrowserWindow::AutoFillPassword() {
     L"}"
     L"})('" + wuser + L"','" + wpass + L"')";
 
-  webview_->ExecuteScript(script.c_str(), new PmAutofillHandler(this, wuser, wpass));
+  WebView()->ExecuteScript(script.c_str(), new PmAutofillHandler(this, wuser, wpass));
   MessageBoxA(nullptr, "Auto-fill uitgevoerd.", "Auto-fill", MB_OK);
 }
 
@@ -691,14 +953,14 @@ static std::wstring GetBookmarkPath() {
 }
 
 void BrowserWindow::AddBookmark() {
-  if (!webview_) return;
+  if (!WebView()) return;
   LPWSTR url = nullptr;
-  webview_->get_Source(&url);
+  WebView()->get_Source(&url);
   if (!url) return;
 
   LPWSTR title = nullptr;
   ICoreWebView2_5* wv5 = nullptr;
-  if (SUCCEEDED(webview_->QueryInterface(IID_ICoreWebView2_5, (void**)&wv5)) && wv5) {
+  if (SUCCEEDED(WebView()->QueryInterface(IID_ICoreWebView2_5, (void**)&wv5)) && wv5) {
     wv5->get_DocumentTitle(&title);
     wv5->Release();
   }
@@ -762,7 +1024,7 @@ void BrowserWindow::ShowDownloads() {
 // Site dark mode toggle
 // -------------------------------------------------------------------
 void BrowserWindow::ToggleSiteDark() {
-  if (!webview_) return;
+  if (!WebView()) return;
   siteDark_ = !siteDark_;
   const wchar_t* script = siteDark_
     ? LR"(try{
@@ -775,7 +1037,7 @@ document.head.appendChild(s);
 let s=document.getElementById('__naradark');
 if(s)s.remove();
 }catch(e){})";
-  webview_->ExecuteScript(script, nullptr);
+  WebView()->ExecuteScript(script, nullptr);
 }
 
 // -------------------------------------------------------------------
@@ -791,8 +1053,6 @@ static uint64_t ReadVarint(const uint8_t*& p) {
   return v;
 }
 
-// Import cookies from a single SQLite cookie file into mgr
-// Returns number imported, or UINT32_MAX on failure
 static UINT32 ParseSQLiteCookies(const std::vector<uint8_t>& data,
                                   uint32_t pageSize,
                                   ICoreWebView2CookieManager* mgr,
@@ -801,7 +1061,6 @@ static UINT32 ParseSQLiteCookies(const std::vector<uint8_t>& data,
 static UINT32 ImportCookiesFromFile(ICoreWebView2CookieManager* mgr,
                                      const wchar_t* filePath,
                                      const char* tableName) {
-  // Try 1: open with read sharing (works if Chrome allows it)
   HANDLE hFile = CreateFileW(filePath, GENERIC_READ, FILE_SHARE_READ,
                              nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (hFile != INVALID_HANDLE_VALUE) {
@@ -814,7 +1073,6 @@ static UINT32 ImportCookiesFromFile(ICoreWebView2CookieManager* mgr,
     return ParseSQLiteCookies(data, 0, mgr, tableName);
   }
 
-  // Try 2: copy to temp (works for some locked files)
   wchar_t tmpPath[MAX_PATH];
   GetTempPathW(MAX_PATH, tmpPath);
   wcscat_s(tmpPath, L"nara_cookies_import.tmp");
@@ -845,7 +1103,6 @@ static UINT32 ParseSQLiteCookies(const std::vector<uint8_t>& data,
     if (pageSize == 1) pageSize = 65536;
   }
 
-  // Find root page of the cookie table
   struct FindTable {
     const std::vector<uint8_t>& data;
     uint32_t pageSize;
@@ -862,7 +1119,7 @@ static UINT32 ParseSQLiteCookies(const std::vector<uint8_t>& data,
 
       auto checkRow = [&](const uint8_t* cell) -> bool {
         const uint8_t* cp = cell;
-        ReadVarint(cp); ReadVarint(cp); ReadVarint(cp); // payload len, rowid, header sz
+        ReadVarint(cp); ReadVarint(cp); ReadVarint(cp);
         uint64_t ser[5];
         for (int j = 0; j < 5; j++) ser[j] = ReadVarint(cp);
         if (ser[0] >= 12) cp += (ser[0] - 12) / 2;
@@ -906,7 +1163,6 @@ static UINT32 ParseSQLiteCookies(const std::vector<uint8_t>& data,
   uint32_t rootPage = ft.result;
   if (!rootPage) return 0;
 
-  // Walk cookie table
   UINT32 imported = 0;
   struct Walker {
     const std::vector<uint8_t>& data;
@@ -959,19 +1215,15 @@ static UINT32 ParseSQLiteCookies(const std::vector<uint8_t>& data,
             return v;
           };
 
-          // Dynamic column mapping: first 4 TEXT cols = host,name,value,path; first 3-4 INT cols = expires,secure,httponly,samesite
           {
             int tCol = 0, iCol = 0;
             for (int ci = 0; ci < nSer; ci++) {
               uint64_t st = ser[ci];
               if (st >= 12) {
-                // TEXT (odd) or BLOB (even)
                 if ((st - 12) % 2 == 0) {
-                  // Even → BLOB (skip)
                   cp += (st - 12) / 2;
                   continue;
                 }
-                // Odd → TEXT
                 std::string txt(reinterpret_cast<const char*>(cp), (st - 13) / 2);
                 cp += (st - 13) / 2;
                 if (tCol == 0) host_key = std::move(txt);
@@ -986,8 +1238,6 @@ static UINT32 ParseSQLiteCookies(const std::vector<uint8_t>& data,
                 else if (iCol == 2) is_httponly = (int)v;
                 else if (iCol == 3) samesite = (int)v;
                 iCol++;
-              } else {
-                // NULL (st==0) or other - skip (no data to advance)
               }
             }
           }
@@ -1022,10 +1272,10 @@ static UINT32 ParseSQLiteCookies(const std::vector<uint8_t>& data,
 }
 
 void BrowserWindow::ImportChromeCookies() {
-  if (!webview_) return;
+  if (!WebView()) return;
 
   ICoreWebView2_2* wv2 = nullptr;
-  HRESULT hr = webview_->QueryInterface(IID_ICoreWebView2_2, (void**)&wv2);
+  HRESULT hr = WebView()->QueryInterface(IID_ICoreWebView2_2, (void**)&wv2);
   if (FAILED(hr) || !wv2) return;
   ICoreWebView2CookieManager* mgr = nullptr;
   wv2->get_CookieManager(&mgr);
@@ -1050,7 +1300,6 @@ void BrowserWindow::ImportChromeCookies() {
 
   UINT32 total = 0;
   std::wstring foundList;
-
   std::wstring diag;
 
   for (auto& b : browsers) {
@@ -1125,5 +1374,3 @@ void BrowserWindow::ImportChromeCookies() {
   }
   MessageBoxW(nullptr, msg, L"Cookie Import", MB_OK);
 }
-
-
