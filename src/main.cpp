@@ -93,11 +93,18 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
           HMENU menu = CreatePopupMenu();
           AppendMenuW(menu, MF_STRING, kIdToggleTheme,
                       gBrowser && gBrowser->IsDark() ? L"Light Mode" : L"Dark Mode");
+          HMENU langMenu = CreatePopupMenu();
+          AppendMenuW(langMenu, MF_STRING, kIdLangEnglish, L"English");
+          AppendMenuW(langMenu, MF_STRING, kIdLangDutch, L"Nederlands");
+          AppendMenuW(menu, MF_POPUP, (UINT_PTR)langMenu, L"Language");
+          AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+          AppendMenuW(menu, MF_STRING, kIdCredits, L"Credits");
           POINT pt;
           GetCursorPos(&pt);
           SetForegroundWindow(hwnd);
           TrackPopupMenu(menu, TPM_LEFTALIGN | TPM_RIGHTBUTTON,
                          pt.x, pt.y, 0, hwnd, nullptr);
+          DestroyMenu(langMenu);
           DestroyMenu(menu);
           break;
         }
@@ -107,6 +114,21 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             UpdateToolbarBrush(gBrowser->IsDark());
           }
           break;
+        case kIdLangEnglish:
+          MessageBoxW(hwnd, L"Language set to English.\n\nUI translation coming soon!", L"Language", MB_OK);
+          break;
+        case kIdLangDutch:
+          MessageBoxW(hwnd, L"Taal ingesteld op Nederlands.\n\nUI vertaling komt binnenkort!", L"Taal", MB_OK);
+          break;
+        case kIdCredits: {
+          MessageBoxW(hwnd,
+            L"Nara Browser\n\n"
+            L"Made by yutaa\n"
+            L"github.com/kattriley\n\n"
+            L"Powered by WebView2",
+            L"Credits", MB_OK);
+          break;
+        }
 
       }
       break;

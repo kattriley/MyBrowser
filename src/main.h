@@ -19,6 +19,9 @@ constexpr int kIdUnused           = 108;
 constexpr int kIdAccelReload      = 1001;
 
 constexpr int kIdToggleTheme      = 200;
+constexpr int kIdLangEnglish      = 201;
+constexpr int kIdLangDutch        = 202;
+constexpr int kIdCredits          = 203;
 
 constexpr int kToolbarHeight = 36;
 constexpr int kBtnW = 82;
