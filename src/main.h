@@ -14,8 +14,6 @@ constexpr int kIdImportCookies    = 104;
 constexpr int kIdExportCookies    = 105;
 constexpr int kIdSettingsButton   = 106;
 constexpr int kIdSpotifyButton    = 107;
-constexpr int kIdBookmarkAdd      = 108;
-constexpr int kIdBookmarkShow     = 110;
 constexpr int kIdDownloads        = 111;
 constexpr int kIdSiteDark         = 112;
 
