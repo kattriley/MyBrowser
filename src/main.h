@@ -14,15 +14,11 @@ constexpr int kIdImportCookies    = 104;
 constexpr int kIdExportCookies    = 105;
 constexpr int kIdSettingsButton   = 106;
 constexpr int kIdSpotifyButton    = 107;
-constexpr int kIdImportChrome     = 108;
+constexpr int kIdUnused           = 108;
 
 constexpr int kIdAccelReload      = 1001;
 
 constexpr int kIdToggleTheme      = 200;
-constexpr int kIdPmSave           = 201;
-constexpr int kIdPmAutofill       = 202;
-constexpr int kIdPmView           = 203;
-constexpr int kIdPmClear          = 204;
 
 constexpr int kToolbarHeight = 38;
 constexpr int kBtnW = 72;

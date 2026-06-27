@@ -22,7 +22,6 @@ static void CreateToolbar(HWND parent) {
   x += 8;
   btn(kIdImportCookies,   L"Import");
   btn(kIdExportCookies,   L"Export");
-  btn(kIdImportChrome,    L"Chrome");
   btn(kIdSettingsButton,  L"Settings");
 }
 
@@ -89,9 +88,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
           break;
         case kIdAccelReload:
           if (gBrowser) gBrowser->Reload();
-          break;
-        case kIdImportChrome:
-          if (gBrowser) gBrowser->ImportChromeCookies();
           break;
         case kIdSettingsButton: {
           HMENU menu = CreatePopupMenu();
