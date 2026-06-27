@@ -23,6 +23,7 @@ set(SOURCES
 )
 
 add_executable(nara WIN32 ${SOURCES})
+target_link_options(nara PRIVATE -mwindows)
 
 target_include_directories(nara PRIVATE src ${WEBVIEW2_INCLUDE_DIR})
 target_link_libraries(nara PRIVATE -L${CMAKE_BINARY_DIR} -lwebview2loader ole32 oleaut32 uuid)

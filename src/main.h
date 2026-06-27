@@ -13,7 +13,7 @@ constexpr int kIdDiscordButton    = 109;
 constexpr int kIdImportCookies    = 104;
 constexpr int kIdExportCookies    = 105;
 constexpr int kIdSettingsButton   = 106;
-constexpr int kIdPasswordsButton  = 107;
+constexpr int kIdSpotifyButton    = 107;
 constexpr int kIdImportChrome     = 108;
 
 constexpr int kIdAccelReload      = 1001;

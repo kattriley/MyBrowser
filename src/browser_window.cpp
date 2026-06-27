@@ -692,34 +692,58 @@ static uint64_t ReadVarint(const uint8_t*& p) {
 }
 
 // Import cookies from a single SQLite cookie file into mgr
-// tableName: "cookies" (Chrome) or "moz_cookies" (Firefox)
 // Returns number imported, or UINT32_MAX on failure
+static UINT32 ParseSQLiteCookies(const std::vector<uint8_t>& data,
+                                  uint32_t pageSize,
+                                  ICoreWebView2CookieManager* mgr,
+                                  const char* tableName);
+
 static UINT32 ImportCookiesFromFile(ICoreWebView2CookieManager* mgr,
                                      const wchar_t* filePath,
                                      const char* tableName) {
+  // Try 1: open with read sharing (works if Chrome allows it)
+  HANDLE hFile = CreateFileW(filePath, GENERIC_READ, FILE_SHARE_READ,
+                             nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (hFile != INVALID_HANDLE_VALUE) {
+    DWORD fsize = GetFileSize(hFile, nullptr);
+    if (fsize < 100) { CloseHandle(hFile); return UINT32_MAX; }
+    std::vector<uint8_t> data(fsize);
+    DWORD rd = 0;
+    ReadFile(hFile, data.data(), fsize, &rd, nullptr);
+    CloseHandle(hFile);
+    return ParseSQLiteCookies(data, 0, mgr, tableName);
+  }
+
+  // Try 2: copy to temp (works for some locked files)
   wchar_t tmpPath[MAX_PATH];
   GetTempPathW(MAX_PATH, tmpPath);
-  wcscat_s(tmpPath, L"nara_cookies.tmp");
+  wcscat_s(tmpPath, L"nara_cookies_import.tmp");
   if (!CopyFileW(filePath, tmpPath, FALSE)) return UINT32_MAX;
-
-  HANDLE hFile = CreateFileW(tmpPath, GENERIC_READ, FILE_SHARE_READ, nullptr,
-                             OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  hFile = CreateFileW(tmpPath, GENERIC_READ, FILE_SHARE_READ,
+                      nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (hFile == INVALID_HANDLE_VALUE) { DeleteFileW(tmpPath); return UINT32_MAX; }
-
   DWORD fsize = GetFileSize(hFile, nullptr);
   if (fsize < 100) { CloseHandle(hFile); DeleteFileW(tmpPath); return UINT32_MAX; }
-
   std::vector<uint8_t> data(fsize);
   DWORD rd = 0;
   ReadFile(hFile, data.data(), fsize, &rd, nullptr);
   CloseHandle(hFile);
   DeleteFileW(tmpPath);
+  return ParseSQLiteCookies(data, 0, mgr, tableName);
+}
 
-  if (memcmp(data.data(), "SQLite format 3\0", 16) != 0) return UINT32_MAX;
+static UINT32 ParseSQLiteCookies(const std::vector<uint8_t>& data,
+                                  uint32_t pageSize,
+                                  ICoreWebView2CookieManager* mgr,
+                                  const char* tableName) {
+  if (data.size() < 100) return 0;
+  if (memcmp(data.data(), "SQLite format 3\0", 16) != 0) return 0;
 
-  uint32_t pageSize = *(uint16_t*)(data.data() + 16);
-  pageSize = (pageSize << 8) | (pageSize >> 8);
-  if (pageSize == 1) pageSize = 65536;
+  if (pageSize == 0) {
+    pageSize = *(uint16_t*)(data.data() + 16);
+    pageSize = (pageSize << 8) | (pageSize >> 8);
+    if (pageSize == 1) pageSize = 65536;
+  }
 
   // Find root page of the cookie table
   struct FindTable {
@@ -835,24 +859,38 @@ static UINT32 ImportCookiesFromFile(ICoreWebView2CookieManager* mgr,
             return v;
           };
 
-          // Col 0: creation_utc - skip
-          if (ser[1] >= 12) cp += (ser[1] - 12) / 2; else readInt(ser[1]);
-          // Col 1: host_key
-          if (ser[2] >= 12) host_key = readText(ser[2]);
-          // Col 2: top_frame_site_key - skip
-          if (ser[3] >= 12) cp += (ser[3] - 12) / 2;
-          // Col 3: name
-          if (ser[4] >= 12) name = readText(ser[4]);
-          // Col 4: value
-          if (ser[5] >= 12) value = readText(ser[5]);
-          // Col 5: path
-          if (ser[6] >= 12) path = readText(ser[6]);
-          // Col 6: expires_utc
-          expires_utc = readInt(ser[7]);
-          // Col 7: is_secure
-          is_secure = (int)readInt(ser[8]);
-          // Col 8: is_httponly
-          is_httponly = (int)readInt(ser[9]);
+          // Dynamic column mapping: first 4 TEXT cols = host,name,value,path; first 3-4 INT cols = expires,secure,httponly,samesite
+          {
+            int tCol = 0, iCol = 0;
+            for (int ci = 0; ci < nSer; ci++) {
+              uint64_t st = ser[ci];
+              if (st >= 12) {
+                // TEXT (odd) or BLOB (even)
+                if ((st - 12) % 2 == 0) {
+                  // Even → BLOB (skip)
+                  cp += (st - 12) / 2;
+                  continue;
+                }
+                // Odd → TEXT
+                std::string txt(reinterpret_cast<const char*>(cp), (st - 13) / 2);
+                cp += (st - 13) / 2;
+                if (tCol == 0) host_key = std::move(txt);
+                else if (tCol == 1) name = std::move(txt);
+                else if (tCol == 2) value = std::move(txt);
+                else if (tCol == 3) path = std::move(txt);
+                tCol++;
+              } else if (st >= 1 && st <= 9) {
+                int64_t v = readInt(st);
+                if (iCol == 0) expires_utc = v;
+                else if (iCol == 1) is_secure = (int)v;
+                else if (iCol == 2) is_httponly = (int)v;
+                else if (iCol == 3) samesite = (int)v;
+                iCol++;
+              } else {
+                // NULL (st==0) or other - skip (no data to advance)
+              }
+            }
+          }
 
           if (host_key.empty() || name.empty()) continue;
 
@@ -894,49 +932,96 @@ void BrowserWindow::ImportChromeCookies() {
   wv2->Release();
   if (!mgr) return;
 
-  struct BrowserInfo {
+  struct BrowserDef {
     const wchar_t* env;
-    const wchar_t* subpath;
+    const wchar_t* rootSubpath;
     const char* table;
     const wchar_t* name;
   };
 
-  BrowserInfo browsers[] = {
-    {L"LOCALAPPDATA", L"\\Google\\Chrome\\User Data\\Default\\Cookies", "cookies", L"Chrome"},
-    {L"LOCALAPPDATA", L"\\Microsoft\\Edge\\User Data\\Default\\Cookies", "cookies", L"Edge"},
-    {L"LOCALAPPDATA", L"\\BraveSoftware\\Brave-Browser\\User Data\\Default\\Cookies", "cookies", L"Brave"},
-    {L"LOCALAPPDATA", L"\\Chromium\\User Data\\Default\\Cookies", "cookies", L"Chromium"},
-    {L"LOCALAPPDATA", L"\\Vivaldi\\User Data\\Default\\Cookies", "cookies", L"Vivaldi"},
-    {L"APPDATA", L"\\Opera Software\\Opera Stable\\Cookies", "cookies", L"Opera"},
+  BrowserDef browsers[] = {
+    {L"LOCALAPPDATA", L"\\Google\\Chrome\\User Data", "cookies", L"Chrome"},
+    {L"LOCALAPPDATA", L"\\Microsoft\\Edge\\User Data", "cookies", L"Edge"},
+    {L"LOCALAPPDATA", L"\\BraveSoftware\\Brave-Browser\\User Data", "cookies", L"Brave"},
+    {L"LOCALAPPDATA", L"\\Chromium\\User Data", "cookies", L"Chromium"},
+    {L"LOCALAPPDATA", L"\\Vivaldi\\User Data", "cookies", L"Vivaldi"},
+    {L"APPDATA", L"\\Opera Software\\Opera Stable", "cookies", L"Opera"},
   };
 
   UINT32 total = 0;
   std::wstring foundList;
 
+  std::wstring diag;
+
   for (auto& b : browsers) {
-    wchar_t path[MAX_PATH];
-    GetEnvironmentVariableW(b.env, path, MAX_PATH);
-    wcscat_s(path, b.subpath);
+    wchar_t root[MAX_PATH];
+    GetEnvironmentVariableW(b.env, root, MAX_PATH);
+    wcscat_s(root, b.rootSubpath);
 
-    DWORD attr = GetFileAttributesW(path);
-    if (attr == INVALID_FILE_ATTRIBUTES || (attr & FILE_ATTRIBUTE_DIRECTORY)) continue;
+    DWORD rootAttr = GetFileAttributesW(root);
+    if (rootAttr == INVALID_FILE_ATTRIBUTES || !(rootAttr & FILE_ATTRIBUTE_DIRECTORY)) {
+      diag += b.name; diag += L": dir niet gevonden\r\n";
+      continue;
+    }
 
-    UINT32 n = ImportCookiesFromFile(mgr, path, b.table);
-    if (n > 0 && n != UINT32_MAX) {
-      total += n;
-      if (!foundList.empty()) foundList += L", ";
-      foundList += b.name;
-      foundList += L" (" + std::to_wstring(n) + L")";
+    wchar_t pattern[MAX_PATH];
+    wcscpy_s(pattern, root);
+    wcscat_s(pattern, L"\\*");
+
+    WIN32_FIND_DATAW ffd;
+    HANDLE hFind = FindFirstFileW(pattern, &ffd);
+    if (hFind == INVALID_HANDLE_VALUE) {
+      diag += b.name; diag += L": FindFirstFile mislukt\r\n";
+      continue;
+    }
+
+    const wchar_t* subPaths[] = {L"\\Cookies", L"\\Network\\Cookies"};
+    int foundCount = 0;
+    do {
+      if (!(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) continue;
+      if (wcscmp(ffd.cFileName, L".") == 0 || wcscmp(ffd.cFileName, L"..") == 0) continue;
+
+      for (int spi = 0; spi < 2; spi++) {
+        wchar_t path[MAX_PATH];
+        wcscpy_s(path, root);
+        wcscat_s(path, L"\\");
+        wcscat_s(path, ffd.cFileName);
+        wcscat_s(path, subPaths[spi]);
+
+        DWORD attr = GetFileAttributesW(path);
+        if (attr == INVALID_FILE_ATTRIBUTES || (attr & FILE_ATTRIBUTE_DIRECTORY)) continue;
+        foundCount++;
+
+        UINT32 n = ImportCookiesFromFile(mgr, path, b.table);
+        if (n > 0 && n != UINT32_MAX) {
+          total += n;
+          if (!foundList.empty()) foundList += L", ";
+          foundList += b.name;
+          foundList += L" [" + std::wstring(ffd.cFileName) + L"]";
+          foundList += L" (" + std::to_wstring(n) + L")";
+          diag += b.name; diag += L" ["; diag += ffd.cFileName; diag += subPaths[spi];
+          diag += L"]: "; diag += std::to_wstring(n); diag += L" cookies OK\r\n";
+        } else {
+          diag += b.name; diag += L" ["; diag += ffd.cFileName; diag += subPaths[spi];
+          diag += L"]: ";
+          diag += (n == 0) ? L"0 cookies\r\n" : L"FOUT bij lezen\r\n";
+        }
+      }
+    } while (FindNextFileW(hFind, &ffd) != 0);
+    FindClose(hFind);
+
+    if (foundCount == 0) {
+      diag += b.name; diag += L": geen Cookies bestand gevonden in profielen\r\n";
     }
   }
 
   mgr->Release();
 
-  wchar_t msg[512];
+  wchar_t msg[1024];
   if (total > 0) {
-    swprintf_s(msg, L"%u cookies geimporteerd uit: %s", total, foundList.c_str());
+    swprintf_s(msg, L"%u cookies geimporteerd uit: %s\n\n%s", total, foundList.c_str(), diag.c_str());
   } else {
-    wcscpy_s(msg, L"Geen cookies gevonden op deze PC.");
+    swprintf_s(msg, L"Geen cookies gevonden.\n\n%s", diag.c_str());
   }
   MessageBoxW(nullptr, msg, L"Cookie Import", MB_OK);
 }

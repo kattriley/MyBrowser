@@ -18,11 +18,10 @@ static void CreateToolbar(HWND parent) {
   btn(kIdPinterestButton, L"Pinterest");
   btn(kIdRobloxButton,    L"Roblox");
   btn(kIdDiscordButton,   L"Discord");
+  btn(kIdSpotifyButton,   L"Spotify");
   x += 8;
   btn(kIdImportCookies,   L"Import");
   btn(kIdExportCookies,   L"Export");
-  x += 8;
-  btn(kIdPasswordsButton, L"Passwords");
   btn(kIdImportChrome,    L"Chrome");
   btn(kIdSettingsButton,  L"Settings");
 }
@@ -79,6 +78,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case kIdDiscordButton:
           if (gBrowser) gBrowser->Navigate(L"https://discord.com");
           break;
+        case kIdSpotifyButton:
+          if (gBrowser) gBrowser->Navigate(L"https://open.spotify.com");
+          break;
         case kIdImportCookies:
           if (gBrowser) gBrowser->ImportCookies();
           break;
@@ -109,33 +111,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             UpdateToolbarBrush(gBrowser->IsDark());
           }
           break;
-        case kIdPasswordsButton: {
-          HMENU menu = CreatePopupMenu();
-          AppendMenuW(menu, MF_STRING, kIdPmSave,     L"Save This Login");
-          AppendMenuW(menu, MF_STRING, kIdPmAutofill, L"Auto-fill");
-          AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-          AppendMenuW(menu, MF_STRING, kIdPmView,     L"View Passwords");
-          AppendMenuW(menu, MF_STRING, kIdPmClear,    L"Clear All");
-          POINT pt;
-          GetCursorPos(&pt);
-          SetForegroundWindow(hwnd);
-          TrackPopupMenu(menu, TPM_LEFTALIGN | TPM_RIGHTBUTTON,
-                         pt.x, pt.y, 0, hwnd, nullptr);
-          DestroyMenu(menu);
-          break;
-        }
-        case kIdPmSave:
-          if (gBrowser) gBrowser->SavePassword();
-          break;
-        case kIdPmAutofill:
-          if (gBrowser) gBrowser->AutoFillPassword();
-          break;
-        case kIdPmView:
-          if (gBrowser) gBrowser->ViewPasswords();
-          break;
-        case kIdPmClear:
-          if (gBrowser) gBrowser->ClearPasswords();
-          break;
+
       }
       break;
 
