@@ -679,6 +679,106 @@ void BrowserWindow::ClearPasswords() {
 }
 
 // -------------------------------------------------------------------
+// Bookmarks
+// -------------------------------------------------------------------
+static std::wstring GetBookmarkPath() {
+  wchar_t buf[MAX_PATH];
+  GetEnvironmentVariableW(L"APPDATA", buf, MAX_PATH);
+  wcscat_s(buf, L"\\Nara");
+  CreateDirectoryW(buf, nullptr);
+  wcscat_s(buf, L"\\bookmarks.txt");
+  return buf;
+}
+
+void BrowserWindow::AddBookmark() {
+  if (!webview_) return;
+  LPWSTR url = nullptr;
+  webview_->get_Source(&url);
+  if (!url) return;
+
+  LPWSTR title = nullptr;
+  ICoreWebView2_5* wv5 = nullptr;
+  if (SUCCEEDED(webview_->QueryInterface(IID_ICoreWebView2_5, (void**)&wv5)) && wv5) {
+    wv5->get_DocumentTitle(&title);
+    wv5->Release();
+  }
+  if (!title) { title = (LPWSTR)CoTaskMemAlloc(2); title[0] = 0; }
+
+  std::wstring path = GetBookmarkPath();
+  HANDLE hFile = CreateFileW(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ,
+                             nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (hFile != INVALID_HANDLE_VALUE) {
+    SetFilePointer(hFile, 0, nullptr, FILE_END);
+    std::string line = WideToUTF8(title) + "\x01" + WideToUTF8(url) + "\n";
+    DWORD written = 0;
+    WriteFile(hFile, line.data(), (DWORD)line.size(), &written, nullptr);
+    CloseHandle(hFile);
+    MessageBoxA(nullptr, "Bookmark toegevoegd!", "Bookmark", MB_OK);
+  }
+  CoTaskMemFree(url);
+  CoTaskMemFree(title);
+}
+
+void BrowserWindow::ShowBookmarks() {
+  std::wstring path = GetBookmarkPath();
+  HANDLE hFile = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ,
+                             nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (hFile == INVALID_HANDLE_VALUE) {
+    MessageBoxA(nullptr, "Geen bookmarks.", "Bookmarks", MB_OK);
+    return;
+  }
+  DWORD sz = GetFileSize(hFile, nullptr);
+  std::string data((size_t)sz, '\0');
+  DWORD rd = 0;
+  ReadFile(hFile, &data[0], sz, &rd, nullptr);
+  CloseHandle(hFile);
+
+  std::string display;
+  int idx = 0;
+  size_t pos = 0;
+  while (pos < data.size()) {
+    size_t nl = data.find('\n', pos);
+    if (nl == std::string::npos) break;
+    std::string line = data.substr(pos, nl - pos);
+    pos = nl + 1;
+    if (line.empty()) continue;
+    size_t sep = line.find('\x01');
+    if (sep == std::string::npos) continue;
+    display += std::to_string(++idx) + ". " + line.substr(0, sep) + "\n";
+    display += "   " + line.substr(sep + 1) + "\n";
+  }
+  if (display.empty()) display = "Geen bookmarks.";
+  MessageBoxA(nullptr, display.c_str(), "Bookmarks", MB_OK);
+}
+
+// -------------------------------------------------------------------
+// Downloads
+// -------------------------------------------------------------------
+void BrowserWindow::ShowDownloads() {
+  MessageBoxA(nullptr, "Downloads komen binnenkort!", "Downloads", MB_OK);
+}
+
+// -------------------------------------------------------------------
+// Site dark mode toggle
+// -------------------------------------------------------------------
+void BrowserWindow::ToggleSiteDark() {
+  if (!webview_) return;
+  siteDark_ = !siteDark_;
+  const wchar_t* script = siteDark_
+    ? LR"(try{
+let s=document.createElement('style');
+s.id='__naradark';
+s.textContent='html{filter:invert(.88)hue-rotate(180deg)}img,video,canvas,svg{filter:invert(1)hue-rotate(180deg)}*{background-color:transparent!important}';
+document.head.appendChild(s);
+}catch(e){})"
+    : LR"(try{
+let s=document.getElementById('__naradark');
+if(s)s.remove();
+}catch(e){})";
+  webview_->ExecuteScript(script, nullptr);
+}
+
+// -------------------------------------------------------------------
 // Multi-browser cookie import (SQLite parser)
 // -------------------------------------------------------------------
 

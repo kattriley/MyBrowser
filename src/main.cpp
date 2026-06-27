@@ -19,6 +19,10 @@ static void CreateToolbar(HWND parent) {
   btn(kIdRobloxButton,    L"\x2B50 Roblox");
   btn(kIdDiscordButton,   L"\xD83C\xDFAE Discord");
   btn(kIdSpotifyButton,   L"\xD83C\xDFB5 Spotify");
+  btn(kIdBookmarkAdd,     L"\x2B50 Add BM");
+  btn(kIdBookmarkShow,    L"\x2B50 Show BM");
+  btn(kIdDownloads,       L"\xD83D\xDCE9 Downloads");
+  btn(kIdSiteDark,        L"\xD83C\xDF19 Dark");
   x += 8;
   btn(kIdImportCookies,   L"\xD83D\xDCE5 Import");
   btn(kIdExportCookies,   L"\xD83D\xDCE4 Export");
@@ -79,6 +83,18 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
           break;
         case kIdSpotifyButton:
           if (gBrowser) gBrowser->Navigate(L"https://open.spotify.com");
+          break;
+        case kIdBookmarkAdd:
+          if (gBrowser) gBrowser->AddBookmark();
+          break;
+        case kIdBookmarkShow:
+          if (gBrowser) gBrowser->ShowBookmarks();
+          break;
+        case kIdDownloads:
+          if (gBrowser) gBrowser->ShowDownloads();
+          break;
+        case kIdSiteDark:
+          if (gBrowser) gBrowser->ToggleSiteDark();
           break;
         case kIdImportCookies:
           if (gBrowser) gBrowser->ImportCookies();
