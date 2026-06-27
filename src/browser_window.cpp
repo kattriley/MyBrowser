@@ -368,7 +368,7 @@ TabInfo& BrowserWindow::ActiveTabRef() {
 void BrowserWindow::NewTab(const std::wstring& url) {
   TabInfo tab;
   tab.url = url;
-  tab.title = L"Nieuwe tab";
+  tab.title = T(S_NIEUWE_TAB);
   tab.isLoading = true;
   tabs_.push_back(tab);
 
@@ -496,14 +496,14 @@ void BrowserWindow::SearchInPage() {
   // Use the existing edit control or prompt
   // For simplicity, use the address bar as search term input
   // Actually, let's do it properly with Prompt
-  const wchar_t* script =
-    L"(function(){"
-    L"  var t = prompt('Zoek op pagina:');"
+  std::wstring searchPrompt = T(S_SEARCH_PROMPT);
+  std::wstring script = L"(function(){"
+    L"  var t = prompt('" + searchPrompt + L"');"
     L"  if (t && t.length > 0) {"
     L"    window.find(t, false, false, true);"
     L"  }"
     L"})()";
-  WebView()->ExecuteScript(script, nullptr);
+  WebView()->ExecuteScript(script.c_str(), nullptr);
 }
 
 // -------------------------------------------------------------------
@@ -525,7 +525,7 @@ void BrowserWindow::ExportCookies() {
   ICoreWebView2_2* wv2 = nullptr;
   HRESULT hr = WebView()->QueryInterface(IID_ICoreWebView2_2, (void**)&wv2);
   if (FAILED(hr) || !wv2) {
-    MessageBoxA(nullptr, "Kan CookieManager niet openen.", "Fout", MB_OK);
+    MessageBoxW(nullptr, T(S_COOKIE_MANAGER_ERROR), T(S_ERROR), MB_OK);
     return;
   }
   ICoreWebView2CookieManager* mgr = nullptr;
@@ -535,7 +535,7 @@ void BrowserWindow::ExportCookies() {
 
   mgr->GetCookies(L"", new ExportHandler(GetCookiePath()));
   mgr->Release();
-  MessageBoxA(nullptr, "Cookies geexporteerd naar cookies.txt", "Export", MB_OK);
+  MessageBoxW(nullptr, T(S_COOKIE_EXPORT_OK), T(S_COOKIE_EXPORT_TITLE), MB_OK);
 }
 
 // -------------------------------------------------------------------
@@ -546,7 +546,7 @@ void BrowserWindow::ImportCookies() {
   ICoreWebView2_2* wv2 = nullptr;
   HRESULT hr = WebView()->QueryInterface(IID_ICoreWebView2_2, (void**)&wv2);
   if (FAILED(hr) || !wv2) {
-    MessageBoxA(nullptr, "Kan CookieManager niet openen.", "Fout", MB_OK);
+    MessageBoxW(nullptr, T(S_COOKIE_MANAGER_ERROR), T(S_ERROR), MB_OK);
     return;
   }
   ICoreWebView2CookieManager* mgr = nullptr;
@@ -558,7 +558,7 @@ void BrowserWindow::ImportCookies() {
   HANDLE hFile = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
                              OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (hFile == INVALID_HANDLE_VALUE) {
-    MessageBoxA(nullptr, "Geen cookies.txt gevonden.", "Import", MB_OK);
+    MessageBoxW(nullptr, T(S_COOKIE_NO_FILE), T(S_COOKIE_IMPORT_TITLE), MB_OK);
     mgr->Release();
     return;
   }
@@ -615,9 +615,9 @@ void BrowserWindow::ImportCookies() {
 
   mgr->Release();
 
-  char msg[64];
-  snprintf(msg, sizeof(msg), "%u cookies geimporteerd.", imported);
-  MessageBoxA(nullptr, msg, "Import", MB_OK);
+  wchar_t msg[128];
+  swprintf_s(msg, L"%u %s", imported, T(S_COOKIE_IMPORT_OK));
+  MessageBoxW(nullptr, msg, T(S_COOKIE_IMPORT_TITLE), MB_OK);
 }
 
 // -------------------------------------------------------------------
@@ -698,13 +698,13 @@ struct PmSaveHandler : ICoreWebView2ExecuteScriptCompletedHandler {
     std::string raw = json.substr(1, json.size() - 2);
     size_t sep = raw.find("|||");
     if (sep == std::string::npos || sep == 0 || sep == raw.size() - 3) {
-      MessageBoxA(nullptr, "Geen inlogformulier gevonden op deze pagina.", "Wachtwoord", MB_OK);
+      MessageBoxW(nullptr, T(S_PW_NO_FORM), T(S_PW_TITLE), MB_OK);
       return S_OK;
     }
     std::string user = raw.substr(0, sep);
     std::string pass = raw.substr(sep + 3);
     if (user.empty() || pass.empty()) {
-      MessageBoxA(nullptr, "Vul eerst gebruikersnaam en wachtwoord in.", "Wachtwoord", MB_OK);
+      MessageBoxW(nullptr, T(S_PW_FILL_FORM), T(S_PW_TITLE), MB_OK);
       return S_OK;
     }
 
@@ -754,7 +754,7 @@ struct PmSaveHandler : ICoreWebView2ExecuteScriptCompletedHandler {
       DWORD written = 0;
       WriteFile(hFile, out.data(), static_cast<DWORD>(out.size()), &written, nullptr);
       CloseHandle(hFile);
-      MessageBoxA(nullptr, "Wachtwoord opgeslagen!", "Wachtwoord", MB_OK);
+      MessageBoxW(nullptr, T(S_PW_SAVED), T(S_PW_TITLE), MB_OK);
     }
     return S_OK;
   }
@@ -812,7 +812,7 @@ void BrowserWindow::AutoFillPassword() {
   HANDLE hFile = CreateFileW(pwPath.c_str(), GENERIC_READ, FILE_SHARE_READ,
                              nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (hFile == INVALID_HANDLE_VALUE) {
-    MessageBoxA(nullptr, "Geen opgeslagen wachtwoorden.", "Auto-fill", MB_OK);
+    MessageBoxW(nullptr, T(S_PW_NO_PASSWORDS), T(S_AUTOFILL_TITLE), MB_OK);
     return;
   }
 
@@ -847,7 +847,7 @@ void BrowserWindow::AutoFillPassword() {
   }
 
   if (!found) {
-    MessageBoxA(nullptr, "Geen wachtwoord voor deze site.", "Auto-fill", MB_OK);
+    MessageBoxW(nullptr, T(S_PW_AUTOFILL_NONE), T(S_AUTOFILL_TITLE), MB_OK);
     return;
   }
 
@@ -880,7 +880,7 @@ void BrowserWindow::AutoFillPassword() {
     L"})('" + wuser + L"','" + wpass + L"')";
 
   WebView()->ExecuteScript(script.c_str(), new PmAutofillHandler(this, wuser, wpass));
-  MessageBoxA(nullptr, "Auto-fill uitgevoerd.", "Auto-fill", MB_OK);
+  MessageBoxW(nullptr, T(S_PW_AUTOFILL_OK), T(S_AUTOFILL_TITLE), MB_OK);
 }
 
 void BrowserWindow::ViewPasswords() {
@@ -888,7 +888,7 @@ void BrowserWindow::ViewPasswords() {
   HANDLE hFile = CreateFileW(pwPath.c_str(), GENERIC_READ, FILE_SHARE_READ,
                              nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (hFile == INVALID_HANDLE_VALUE) {
-    MessageBoxA(nullptr, "Geen opgeslagen wachtwoorden.", "Wachtwoorden", MB_OK);
+    MessageBoxW(nullptr, T(S_PW_NO_PASSWORDS), T(S_PASSWORDS_TITLE), MB_OK);
     return;
   }
 
@@ -898,7 +898,7 @@ void BrowserWindow::ViewPasswords() {
   ReadFile(hFile, &data[0], sz, &rd, nullptr);
   CloseHandle(hFile);
 
-  std::string display;
+  std::wstring wdisplay;
   size_t pos = 0;
   while (pos < data.size()) {
     size_t nl = data.find('\n', pos);
@@ -920,23 +920,23 @@ void BrowserWindow::ViewPasswords() {
     std::string user = Base64Decode(userB64);
     std::string pass = Base64Decode(passB64);
 
-    display += domain + " | " + user + " | " + pass + "\n";
+    wdisplay += UTF8ToWide(domain) + L" | " + UTF8ToWide(user) + L" | " + UTF8ToWide(pass) + L"\n";
   }
 
-  if (display.empty()) {
-    MessageBoxA(nullptr, "Geen opgeslagen wachtwoorden.", "Wachtwoorden", MB_OK);
+  if (wdisplay.empty()) {
+    MessageBoxW(nullptr, T(S_PW_NO_PASSWORDS), T(S_PASSWORDS_TITLE), MB_OK);
     return;
   }
 
-  MessageBoxA(nullptr, display.c_str(), "Opgeslagen Wachtwoorden", MB_OK);
+  MessageBoxW(nullptr, wdisplay.c_str(), T(S_PW_VIEW_TITLE), MB_OK);
 }
 
 void BrowserWindow::ClearPasswords() {
   std::wstring pwPath = GetPasswordPath();
   if (DeleteFileW(pwPath.c_str())) {
-    MessageBoxA(nullptr, "Alle wachtwoorden gewist.", "Wachtwoorden", MB_OK);
+    MessageBoxW(nullptr, T(S_PW_CLEAR_OK), T(S_PASSWORDS_TITLE), MB_OK);
   } else {
-    MessageBoxA(nullptr, "Geen wachtwoorden om te wissen.", "Wachtwoorden", MB_OK);
+    MessageBoxW(nullptr, T(S_PW_CLEAR_NONE), T(S_PASSWORDS_TITLE), MB_OK);
   }
 }
 
@@ -975,7 +975,7 @@ void BrowserWindow::AddBookmark() {
     DWORD written = 0;
     WriteFile(hFile, line.data(), (DWORD)line.size(), &written, nullptr);
     CloseHandle(hFile);
-    MessageBoxA(nullptr, "Bookmark toegevoegd!", "Bookmark", MB_OK);
+    MessageBoxW(nullptr, T(S_BM_ADDED), T(S_BOOKMARK_TITLE), MB_OK);
   }
   CoTaskMemFree(url);
   CoTaskMemFree(title);
@@ -986,7 +986,7 @@ void BrowserWindow::ShowBookmarks() {
   HANDLE hFile = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ,
                              nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (hFile == INVALID_HANDLE_VALUE) {
-    MessageBoxA(nullptr, "Geen bookmarks.", "Bookmarks", MB_OK);
+    MessageBoxW(nullptr, T(S_BM_NONE), T(S_BM_TITLE), MB_OK);
     return;
   }
   DWORD sz = GetFileSize(hFile, nullptr);
@@ -995,7 +995,7 @@ void BrowserWindow::ShowBookmarks() {
   ReadFile(hFile, &data[0], sz, &rd, nullptr);
   CloseHandle(hFile);
 
-  std::string display;
+  std::wstring display;
   int idx = 0;
   size_t pos = 0;
   while (pos < data.size()) {
@@ -1006,18 +1006,20 @@ void BrowserWindow::ShowBookmarks() {
     if (line.empty()) continue;
     size_t sep = line.find('\x01');
     if (sep == std::string::npos) continue;
-    display += std::to_string(++idx) + ". " + line.substr(0, sep) + "\n";
-    display += "   " + line.substr(sep + 1) + "\n";
+    std::string title = line.substr(0, sep);
+    std::string url = line.substr(sep + 1);
+    display += std::to_wstring(++idx) + L". " + UTF8ToWide(title) + L"\n";
+    display += L"   " + UTF8ToWide(url) + L"\n";
   }
-  if (display.empty()) display = "Geen bookmarks.";
-  MessageBoxA(nullptr, display.c_str(), "Bookmarks", MB_OK);
+  if (display.empty()) display = T(S_BM_NONE);
+  MessageBoxW(nullptr, display.c_str(), T(S_BM_TITLE), MB_OK);
 }
 
 // -------------------------------------------------------------------
 // Downloads
 // -------------------------------------------------------------------
 void BrowserWindow::ShowDownloads() {
-  MessageBoxA(nullptr, "Downloads komen binnenkort!", "Downloads", MB_OK);
+  MessageBoxW(nullptr, T(S_DL_COMING), T(S_DOWNLOADS_TITLE), MB_OK);
 }
 
 // -------------------------------------------------------------------
@@ -1368,9 +1370,9 @@ void BrowserWindow::ImportChromeCookies() {
 
   wchar_t msg[1024];
   if (total > 0) {
-    swprintf_s(msg, L"%u cookies geimporteerd uit: %s\n\n%s", total, foundList.c_str(), diag.c_str());
+    swprintf_s(msg, L"%u %s %s\n\n%s", total, T(S_COOKIE_IMPORT_TEXT), foundList.c_str(), diag.c_str());
   } else {
-    swprintf_s(msg, L"Geen cookies gevonden.\n\n%s", diag.c_str());
+    swprintf_s(msg, L"%s\n\n%s", T(S_COOKIE_NONE_TEXT), diag.c_str());
   }
-  MessageBoxW(nullptr, msg, L"Cookie Import", MB_OK);
+  MessageBoxW(nullptr, msg, T(S_COOKIE_IMPORT_TITLE), MB_OK);
 }

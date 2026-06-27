@@ -1,51 +1,51 @@
 # Nara
 
-Een minimalistische web browser gebouwd op Microsoft Edge WebView2, geschreven in C++ met de Win32 API.
+A minimalist web browser built on Microsoft Edge WebView2, written in C++ with the Win32 API.
 
-Gemaakt door **yutaa** — github.com/kattriley
+Made by **yutaa** — github.com/kattriley
 
 ## Downloads
 
-Download de nieuwste release van [releases](https://github.com/kattriley/nara/releases).  
-Zet `nara.exe` en `WebView2Loader.dll` in dezelfde map en start `nara.exe`.
+Download the latest release from [releases](https://github.com/kattriley/nara/releases).  
+Place `nara.exe` and `WebView2Loader.dll` in the same folder and run `nara.exe`.
 
 ## Features
 
-- **WebView2 engine** — zelfde rendering engine als Microsoft Edge
-- **Adresbalk** — typ een URL en druk op Enter of klik Go (https:// wordt automatisch toegevoegd)
-- **Meerdere tabs** — klik \[+\] voor een nieuwe tab, klik tabs om te wisselen
-- **Terug / Vooruit / Herladen** — navigatieknoppen in de toolbar
-- **Zoeken op pagina** — 🔍 opent een JS prompt en markeert tekst op de pagina
-- **Snelkoppelingen** — 🔍 Google, 📌 Pinterest, ⭐ Roblox, 🎮 Discord, 🎵 Spotify
+- **WebView2 engine** — same rendering engine as Microsoft Edge
+- **Address bar** — type a URL and press Enter or click Go (https:// added automatically)
+- **Multiple tabs** — click \[+\] for a new tab, click tabs to switch
+- **Back / Forward / Reload** — navigation buttons in the toolbar
+- **Search in page** — 🔍 opens a JS prompt and highlights text on the page
+- **Quick links** — 🔍 Google, 📌 Pinterest, ⭐ Roblox, 🎮 Discord, 🎵 Spotify
 - **Downloads** — 📩 (placeholder)
-- **Dark mode** — 🌙 past de hele WebView aan (nachtmodus)
-- **Site dark mode** — 🌙 in toolbar, aparte toggle per site (invert/hue-rotate)
-- **Cookie manager** — 📥 import / 📤 export naar `%APPDATA%\Nara\cookies.txt`
-- **Wachtwoordenmanager** — sla inloggegevens op (Base64 opgeslagen in `%APPDATA%\Nara\passwords.txt`), vul automatisch in, bekijk en wis
-- **Bookmarks** — voeg toe en bekijk via `%APPDATA%\Nara\bookmarks.txt`
-- **Dark/Light thema** — toggle via het Settings menu (⚙)
-- **Taal** — Engels / Nederlands via Settings menu
+- **Dark mode** — 🌙 applies dark theme to the entire WebView
+- **Site dark mode** — 🌙 in toolbar, per-site toggle (invert/hue-rotate)
+- **Cookie manager** — 📥 import / 📤 export to `%APPDATA%\Nara\cookies.txt`
+- **Password manager** — save login credentials (Base64 stored in `%APPDATA%\Nara\passwords.txt`), auto-fill, view, and clear
+- **Bookmarks** — add and view via `%APPDATA%\Nara\bookmarks.txt`
+- **Dark/Light theme** — toggle via the Settings menu (⚙)
+- **Language** — English / Nederlands / Polski via Settings menu
 - **Credits** — ⚙ → Credits
-- **Ctrl+R** — herlaad huidige pagina
-- **Inter font** — wordt automatisch gedownload van GitHub indien niet geïnstalleerd
-- **Geen console** — `-mwindows` flag, schone Windows applicatie
+- **Ctrl+R** — reload current page
+- **Inter font** — automatically downloaded from GitHub if not installed
+- **No console** — `-mwindows` flag, clean Windows application
 
-## Builden
+## Building
 
-### Vereisten
+### Requirements
 
-- LLVM MinGW toolchain (getest met [llvm-mingw](https://github.com/mstorsjo/llvm-mingw))
+- LLVM MinGW toolchain (tested with [llvm-mingw](https://github.com/mstorsjo/llvm-mingw))
 - CMake 3.20+
-- WebView2 SDK (wordt automatisch gedownload via CMake)
+- WebView2 SDK (automatically downloaded via CMake)
 
-### Builden met CMake
+### Build with CMake
 
 ```bash
 cmake -B build -G Ninja -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-clang++ -DCMAKE_RC_COMPILER=windres
 cmake --build build
 ```
 
-### Builden zonder CMake
+### Build without CMake
 
 ```bash
 windres -O coff src/resources.rc build/resources.res
@@ -58,18 +58,19 @@ x86_64-w64-mingw32-clang++ -std=c++17 -O2 -s -static -fuse-ld=lld -mwindows \
     -static-libgcc -static-libstdc++
 ```
 
-## Bestandsstructuur
+## File structure
 
 ```
 src/
-├── main.cpp              — WinMain, WndProc, toolbar creatie, tab bar
-├── main.h                — button IDs, constanten
-├── browser_window.cpp    — BrowserWindow: tabs, adresbalk, navigatie, cookies, wachtwoorden, bookmarks
+├── main.cpp              — WinMain, WndProc, toolbar creation, tab bar
+├── main.h                — button IDs, constants
+├── lang.h                — translation tables (EN/NL/PL), T() macro
+├── browser_window.cpp    — BrowserWindow: tabs, address bar, navigation, cookies, passwords, bookmarks
 ├── browser_window.h      — BrowserWindow class, TabInfo struct
-└── resources.rc          — (optioneel) icoon resources
+└── resources.rc          — (optional) icon resources
 ```
 
-## Licentie
+## License
 
 MIT
 

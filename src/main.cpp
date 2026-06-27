@@ -140,13 +140,13 @@ static void CreateToolbar(HWND parent) {
   x += addrW + kBtnGap;
 
   // Go button
-  navBtn(kIdGoAddr, L"Go", kNavBtnW + 6);
+  navBtn(kIdGoAddr, T(S_GO), kNavBtnW + 6);
 
   // Search in page
-  navBtn(kIdSearch, L"\xD83D\xDD0D", kNavBtnW);   // 🔍
+  navBtn(kIdSearch, T(S_SEARCH), kNavBtnW);
 
   // Settings
-  navBtn(kIdSettingsButton, L"\x2699", kNavBtnW);  // ⚙
+  navBtn(kIdSettingsButton, T(S_SETTINGS), kNavBtnW);
 
   // Site buttons row (row 2)
   y = kTabBarHeight + kToolbarHeight + kBtnTop;
@@ -160,21 +160,21 @@ static void CreateToolbar(HWND parent) {
     x += kBtnW + kBtnGap;
   };
 
-  siteBtn(kIdGoogleButton,    L"\xD83D\xDD0D Google");    // 🔍
-  siteBtn(kIdPinterestButton, L"\xD83D\xDCCC Pinterest"); // 📌
-  siteBtn(kIdRobloxButton,    L"\x2B50 Roblox");          // ⭐
-  siteBtn(kIdDiscordButton,   L"\xD83C\xDFAE Discord");   // 🎮
-  siteBtn(kIdSpotifyButton,   L"\xD83C\xDFB5 Spotify");   // 🎵
-  siteBtn(kIdDownloads,       L"\xD83D\xDCE9 Downloads"); // 📩
-  siteBtn(kIdSiteDark,        L"\xD83C\xDF19 Dark");      // 🌙
+  siteBtn(kIdGoogleButton,    T(S_GOOGLE));
+  siteBtn(kIdPinterestButton, T(S_PINTEREST));
+  siteBtn(kIdRobloxButton,    T(S_ROBLOX));
+  siteBtn(kIdDiscordButton,   T(S_DISCORD));
+  siteBtn(kIdSpotifyButton,   T(S_SPOTIFY));
+  siteBtn(kIdDownloads,       T(S_DOWNLOADS));
+  siteBtn(kIdSiteDark,        T(S_DARK));
   x += 8;
-  siteBtn(kIdImportCookies,   L"\xD83D\xDCE5 Import");    // 📥
-  siteBtn(kIdExportCookies,   L"\xD83D\xDCE4 Export");    // 📤
+  siteBtn(kIdImportCookies,   T(S_IMPORT));
+  siteBtn(kIdExportCookies,   T(S_EXPORT));
 
   // Tab bar
   // Create tab buttons at the very top
   int tabY = 0;
-  HWND newTabBtn = CreateWindowExW(0, L"BUTTON", L"+",
+  HWND newTabBtn = CreateWindowExW(0, L"BUTTON", T(S_NEW_TAB),
     WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
     0, tabY, 28, kTabBarHeight, parent, (HMENU)(INT_PTR)kIdNewTab, nullptr, nullptr);
   if (newTabBtn && gTabFont) SendMessageW(newTabBtn, WM_SETFONT, (WPARAM)gTabFont, TRUE);
@@ -213,7 +213,7 @@ static void UpdateTabBar(HWND hwnd) {
   int activeTab = gBrowser->ActiveTab();
   for (int i = 0; i < nTabs && i < 20; i++) {
     std::wstring label = gBrowser->TabTitle(i);
-    if (label.empty()) label = L"Tab " + std::to_wstring(i + 1);
+    if (label.empty()) label = std::wstring(T(S_TAB_PREFIX)) + std::to_wstring(i + 1);
     if (label.size() > 16) { label = label.substr(0, 14) + L".."; }
 
     HWND hBtn = CreateWindowExW(0, L"BUTTON", label.c_str(),
@@ -302,6 +302,48 @@ static void UpdateToolbarBrush(bool dark) {
 }
 
 
+
+// -------------------------------------------------------------------
+// Update toolbar texts after language switch
+// -------------------------------------------------------------------
+static void UpdateToolbarTexts(HWND hwnd) {
+  auto setText = [&](int id) {
+    HWND h = GetDlgItem(hwnd, id);
+    if (h) {
+      const wchar_t* text = L"";
+      switch (id) {
+        case kIdGoAddr:        text = T(S_GO); break;
+        case kIdSearch:        text = T(S_SEARCH); break;
+        case kIdSettingsButton: text = T(S_SETTINGS); break;
+        case kIdGoogleButton:  text = T(S_GOOGLE); break;
+        case kIdPinterestButton: text = T(S_PINTEREST); break;
+        case kIdRobloxButton:  text = T(S_ROBLOX); break;
+        case kIdDiscordButton: text = T(S_DISCORD); break;
+        case kIdSpotifyButton: text = T(S_SPOTIFY); break;
+        case kIdDownloads:     text = T(S_DOWNLOADS); break;
+        case kIdSiteDark:      text = T(S_DARK); break;
+        case kIdImportCookies: text = T(S_IMPORT); break;
+        case kIdExportCookies: text = T(S_EXPORT); break;
+        case kIdNewTab:        text = T(S_NEW_TAB); break;
+      }
+      SetWindowTextW(h, text);
+    }
+  };
+  setText(kIdGoAddr);
+  setText(kIdSearch);
+  setText(kIdSettingsButton);
+  setText(kIdGoogleButton);
+  setText(kIdPinterestButton);
+  setText(kIdRobloxButton);
+  setText(kIdDiscordButton);
+  setText(kIdSpotifyButton);
+  setText(kIdDownloads);
+  setText(kIdSiteDark);
+  setText(kIdImportCookies);
+  setText(kIdExportCookies);
+  setText(kIdNewTab);
+  UpdateTabBar(hwnd);
+}
 
 // ===================================================================
 // Window procedure
@@ -426,13 +468,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case kIdSettingsButton: {
           HMENU menu = CreatePopupMenu();
           AppendMenuW(menu, MF_STRING, kIdToggleTheme,
-                      gBrowser && gBrowser->IsDark() ? L"Light Mode" : L"Dark Mode");
+                      gBrowser && gBrowser->IsDark() ? T(S_LIGHT_MODE) : T(S_DARK_MODE));
           HMENU langMenu = CreatePopupMenu();
-          AppendMenuW(langMenu, MF_STRING, kIdLangEnglish, L"English");
-          AppendMenuW(langMenu, MF_STRING, kIdLangDutch, L"Nederlands");
-          AppendMenuW(menu, MF_POPUP, (UINT_PTR)langMenu, L"Language");
+          AppendMenuW(langMenu, MF_STRING, kIdLangEnglish, T(S_ENGLISH));
+          AppendMenuW(langMenu, MF_STRING, kIdLangDutch, T(S_NEDERLANDS));
+          AppendMenuW(langMenu, MF_STRING, kIdLangPolish, T(S_POLSKI));
+          AppendMenuW(menu, MF_POPUP, (UINT_PTR)langMenu, T(S_LANGUAGE));
           AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-          AppendMenuW(menu, MF_STRING, kIdCredits, L"Credits");
+          AppendMenuW(menu, MF_STRING, kIdCredits, T(S_CREDITS));
           POINT pt;
           GetCursorPos(&pt);
           SetForegroundWindow(hwnd);
@@ -449,18 +492,19 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
           }
           break;
         case kIdLangEnglish:
-          MessageBoxW(hwnd, L"Language set to English.\n\nUI translation coming soon!", L"Language", MB_OK);
+          gCurrentLang = Lang::English;
+          UpdateToolbarTexts(hwnd);
           break;
         case kIdLangDutch:
-          MessageBoxW(hwnd, L"Taal ingesteld op Nederlands.\n\nUI vertaling komt binnenkort!", L"Taal", MB_OK);
+          gCurrentLang = Lang::Nederlands;
+          UpdateToolbarTexts(hwnd);
+          break;
+        case kIdLangPolish:
+          gCurrentLang = Lang::Polski;
+          UpdateToolbarTexts(hwnd);
           break;
         case kIdCredits: {
-          MessageBoxW(hwnd,
-            L"Nara Browser\n\n"
-            L"Made by yutaa\n"
-            L"github.com/kattriley\n\n"
-            L"Powered by WebView2",
-            L"Credits", MB_OK);
+          MessageBoxW(hwnd, T(S_CREDITS_TEXT), T(S_CREDITS_TITLE), MB_OK);
           break;
         }
       }
@@ -469,10 +513,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     case kMsgCreateTab:
       if (gBrowser) {
         if (lParam == 1) {
-          MessageBoxA(nullptr,
-            "WebView2 runtime niet gevonden.\n"
-            "Installeer van: https://go.microsoft.com/fwlink/p/?LinkId=2124703",
-            "Fout", MB_OK);
+          MessageBoxW(nullptr, T(S_WV2_NOT_FOUND), T(S_ERROR), MB_OK);
         } else {
           gBrowser->NewTab(L"https://www.google.com");
           UpdateTabBar(hwnd);

@@ -1,5 +1,6 @@
 #pragma once
 #include <windows.h>
+#include "lang.h"
 
 class BrowserWindow;
 
@@ -30,7 +31,8 @@ constexpr UINT kMsgCreateTab     = WM_APP + 1;
 constexpr int kIdToggleTheme      = 200;
 constexpr int kIdLangEnglish      = 201;
 constexpr int kIdLangDutch        = 202;
-constexpr int kIdCredits          = 203;
+constexpr int kIdLangPolish       = 203;
+constexpr int kIdCredits          = 204;
 
 constexpr int kTabBarHeight = 28;
 constexpr int kToolbarHeight = 30;
